@@ -1,0 +1,18 @@
+"use strict";
+const CONFIG={sections:[
+{label:"フォロー中",url:"https://x.com/home"},
+{label:"IT",url:"https://x.com/i/lists/1581596744466321408"},
+{label:"ネイル",url:""},{label:"映画",url:""},{label:"投資",url:""}],
+newsLinks:[{label:"本日のニュース",url:"https://x.com/explore/tabs/news"},{label:"トレンド",url:"https://x.com/explore/tabs/trending"}]};
+const K={history:"x-reader-search-history",bookmarks:"x-reader-bookmarks"};
+const app=document.querySelector("#app"),title=document.querySelector("#page-title"),nav=[...document.querySelectorAll(".nav-button")];
+function openX(url){if(!url){alert("この項目のURLはまだ登録されていません。");return}location.href=url}
+function panel(){const e=document.createElement("section");e.className="panel";return e}
+function row(label,url,note="Xで開く"){const b=document.createElement("button");b.type="button";b.className="link-row";b.innerHTML='<span class="chevron">›</span><span class="row-label"></span><span class="row-note"></span>';b.querySelector(".row-label").textContent=label;b.querySelector(".row-note").textContent=note;b.onclick=()=>openX(url);return b}
+function feed(){title.textContent="フィード";app.replaceChildren();const i=document.createElement("p");i.className="intro";i.textContent="各項目を押すとXを開きます。X側ではユーザースクリプトが表示を整えます。";app.append(i);const p=panel();CONFIG.sections.forEach(s=>{const b=document.createElement("button");b.type="button";b.className="section-button";b.innerHTML='<span class="chevron">▼</span><span class="row-label"></span><span class="row-note"></span>';b.querySelector(".row-label").textContent=s.label;b.querySelector(".row-note").textContent=s.url?"開く":"未設定";b.onclick=()=>openX(s.url);p.append(b)});app.append(p)}
+function history(){try{return JSON.parse(localStorage.getItem(K.history))||[]}catch{return[]}}
+function searchRun(q){q=q.trim();if(!q)return;const h=[q,...history().filter(x=>x!==q)].slice(0,8);localStorage.setItem(K.history,JSON.stringify(h));openX(`https://x.com/search?q=${encodeURIComponent(q)}&src=typed_query&f=live`)}
+function search(){title.textContent="検索";app.replaceChildren();const p=panel(),f=document.createElement("form");f.className="search-form";f.innerHTML='<input class="search-input" type="search" placeholder="Xを検索" autocomplete="off"><button class="primary-button" type="submit">検索</button>';const input=f.querySelector("input");f.onsubmit=e=>{e.preventDefault();searchRun(input.value)};p.append(f);app.append(p);const hp=panel(),h=history();if(!h.length){const e=document.createElement("div");e.className="empty";e.textContent="検索履歴はまだありません。";hp.append(e)}else{const t=document.createElement("div");t.className="history-title";t.textContent="検索履歴";hp.append(t);h.forEach(q=>{const b=row(q,"","再検索");b.onclick=()=>searchRun(q);hp.append(b)});const c=row("履歴を消去","","");c.onclick=()=>{localStorage.removeItem(K.history);search()};hp.append(c)}app.append(hp)}
+function news(){title.textContent="本日のニュース";app.replaceChildren();const i=document.createElement("p");i.className="intro";i.textContent="ニュースやトレンドを見たいときだけ、ここからXを開きます。";app.append(i);const p=panel();CONFIG.newsLinks.forEach(x=>p.append(row(x.label,x.url)));app.append(p)}
+function bookmarks(){title.textContent="保存";app.replaceChildren();const p=panel(),e=document.createElement("div");e.className="empty";e.innerHTML="保存した投稿はまだありません。<br>ユーザースクリプトとの連携は次の段階で追加します。";p.append(e);app.append(p)}
+const pages={feed,search,news,bookmarks};function go(name){nav.forEach(b=>b.classList.toggle("is-active",b.dataset.page===name));(pages[name]||feed)()}nav.forEach(b=>b.onclick=()=>go(b.dataset.page));if("serviceWorker" in navigator)addEventListener("load",()=>navigator.serviceWorker.register("./service-worker.js").catch(console.error));go("feed");
