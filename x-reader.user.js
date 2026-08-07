@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         X Reader Accordion v7.0.4-step11-light
 // @namespace    local.x-reader-accordion
-// @version      7.0.4.12.1
-// @description  添付画像だけを正しく判定し、リンクカードと操作を使いやすく整えたモノクロ軽量版です。
+// @version      7.0.4.12.2
+// @description  添付画像とブックマークを重ねず、リンクカードと操作を使いやすく整えたモノクロ軽量版です。
 // @match        https://x.com/*
 // @match        https://twitter.com/*
 // @updateURL    https://raw.githubusercontent.com/aya0no/x-reader/main/x-reader.meta.js
@@ -58,8 +58,7 @@
     .xra-list { padding: 8px 0 76px; }
     .xra-card { position: relative; display: grid; grid-template-columns: minmax(0,1fr); gap: 8px; margin: 0 10px 8px; padding: 13px 14px; border: 1px solid #dededb; border-radius: 13px; background: #fff; cursor: pointer; -webkit-tap-highlight-color: transparent; }
     .xra-card.has-media { grid-template-columns: minmax(0,1fr) ${CONFIG.imageWidth}px; }
-    .xra-main { min-width: 0; }
-    .xra-card:not(.has-media) .xra-main { padding-right: 28px; }
+    .xra-main { min-width: 0; padding-right: 28px; }
     .xra-meta { display: flex; gap: 5px; min-height: 14px; margin-bottom: 3px; overflow: hidden; white-space: nowrap; }
     .xra-handle { overflow: hidden; font-size: 11.5px; font-weight: 650; text-overflow: ellipsis; }
     .xra-time { flex: 0 0 auto; color: #777; font-size: 10.5px; }
@@ -71,7 +70,7 @@
     .xra-link-title { display: -webkit-box; margin-top: 1px; overflow: hidden; font-size: 11.5px; font-weight: 650; line-height: 1.35; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
     .xra-link-summary { display: -webkit-box; margin-top: 2px; overflow: hidden; color: #666; font-size: 10.5px; line-height: 1.35; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
     .xra-card-bookmark { position: absolute; top: 10px; right: 10px; display: flex; align-items: center; justify-content: center; width: 25px; height: 25px; padding: 0; border: 1px solid #cfcfcb; border-radius: 50%; background: rgba(255,255,255,.94); color: #333; }
-    .xra-card.has-media .xra-card-bookmark { top: 17px; right: 18px; }
+    .xra-card.has-media .xra-card-bookmark { top: 12px; right: calc(${CONFIG.imageWidth}px + 22px); }
     .xra-card-bookmark svg { display: block; width: 13px; height: 13px; fill: currentColor; }
     .xra-card-bookmark[data-saved="true"] { border-color: #171717; background: #171717; color: #fff; }
     #${MEDIA_MODAL_ID} { position: fixed; inset: 0; z-index: 2147483647; display: flex; align-items: center; justify-content: center; padding: 44px 18px calc(44px + env(safe-area-inset-bottom, 0px)); background: rgba(0,0,0,.76); }
