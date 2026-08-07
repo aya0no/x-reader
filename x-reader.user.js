@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         X Reader Accordion v7.0.4-step11-light
 // @namespace    local.x-reader-accordion
-// @version      7.0.4.12.2
-// @description  添付画像とブックマークを重ねず、リンクカードと操作を使いやすく整えたモノクロ軽量版です。
+// @version      7.0.4.12.3
+// @description  IDの@を省き、リストを固定タブですぐ切り替えられるモノクロ軽量版です。
 // @match        https://x.com/*
 // @match        https://twitter.com/*
 // @updateURL    https://raw.githubusercontent.com/aya0no/x-reader/main/x-reader.meta.js
@@ -44,16 +44,18 @@
   const css = `
     #${ROOT_ID} { position: fixed; inset: 0; z-index: 2147483000; overflow-y: auto; background: #f7f7f5; color: #171717; font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Yu Gothic UI", "Yu Gothic", sans-serif; -webkit-overflow-scrolling: touch; }
     #${ROOT_ID} * { box-sizing: border-box; }
-    .xra-header { position: sticky; top: 0; z-index: 20; display: flex; align-items: center; min-height: 46px; padding: 7px 14px; background: rgba(247,247,245,.96); border-bottom: 1px solid #ddd; backdrop-filter: blur(12px); }
-    .xra-title { width: 100%; max-width: 680px; margin: 0 auto; font-size: 14px; font-weight: 700; }
+    .xra-header { position: sticky; top: 0; z-index: 20; display: flex; align-items: center; min-height: 46px; padding: 7px 10px; background: rgba(247,247,245,.96); border-bottom: 1px solid #ddd; backdrop-filter: blur(12px); }
+    .xra-tabs { display: flex; gap: 6px; width: 100%; max-width: 680px; margin: 0 auto; overflow-x: auto; scrollbar-width: none; -webkit-overflow-scrolling: touch; }
+    .xra-tabs::-webkit-scrollbar { display: none; }
+    .xra-section-tab { display: inline-flex; flex: 0 0 auto; align-items: center; justify-content: center; min-height: 31px; padding: 0 11px; border: 1px solid #cececa; border-radius: 16px; background: #fff; color: #444; font-size: 11.5px; font-weight: 650; white-space: nowrap; }
+    .xra-section-tab[data-active="true"] { border-color: #171717; background: #171717; color: #fff; }
+    .xra-section-tab:active { transform: scale(.97); }
+    .xra-section-count { min-width: 12px; margin-left: 5px; color: #777; font-size: 9px; font-variant-numeric: tabular-nums; text-align: center; }
+    .xra-section-tab[data-active="true"] .xra-section-count { color: rgba(255,255,255,.76); }
     .xra-sections { max-width: 680px; margin: 0 auto; }
-    .xra-section { border-bottom: 1px solid #dededb; }
-    .xra-section-button { display: flex; align-items: center; width: 100%; min-height: 42px; padding: 0 12px; border: 0; background: transparent; color: #171717; font-size: 12px; font-weight: 650; text-align: left; }
-    .xra-arrow { display: inline-block; width: 18px; margin-right: 4px; font-size: 11px; transition: transform .15s ease; }
-    .xra-section-count { min-width: 24px; margin-left: auto; padding: 2px 7px; border: 1px solid #d3d3d0; border-radius: 10px; color: #666; font-size: 9.5px; font-variant-numeric: tabular-nums; text-align: center; }
-    .xra-section[data-open="false"] .xra-arrow { transform: rotate(-90deg); }
-    .xra-content { display: none; }
-    .xra-section[data-open="true"] .xra-content { display: block; }
+    .xra-section { display: none; }
+    .xra-section[data-open="true"] { display: block; }
+    .xra-content { display: block; }
     .xra-status { padding: 6px 12px 3px; color: #777; font-size: 10px; text-align: center; }
     .xra-list { padding: 8px 0 76px; }
     .xra-card { position: relative; display: grid; grid-template-columns: minmax(0,1fr); gap: 8px; margin: 0 10px 8px; padding: 13px 14px; border: 1px solid #dededb; border-radius: 13px; background: #fff; cursor: pointer; -webkit-tap-highlight-color: transparent; }
@@ -630,7 +632,7 @@
     const card = document.createElement("article"); card.className = `xra-card${mediaSrc ? " has-media" : ""}`; card.setAttribute(CARD_ATTR, key);
     const main = document.createElement("div"); main.className = "xra-main";
     const meta = document.createElement("div"); meta.className = "xra-meta";
-    const handleEl = document.createElement("div"); handleEl.className = "xra-handle"; handleEl.textContent = handle || "@unknown";
+    const handleEl = document.createElement("div"); handleEl.className = "xra-handle"; handleEl.textContent = handle.replace(/^@/, "");
     const timeEl = document.createElement("div"); timeEl.className = "xra-time"; timeEl.textContent = time;
     const textEl = document.createElement("div"); textEl.className = "xra-text"; textEl.textContent = text;
     meta.append(handleEl, timeEl); main.appendChild(meta); if (text) main.appendChild(textEl);
@@ -677,7 +679,7 @@
     const section = currentSection();
     const list = document.querySelector(`.xra-section[data-section-id="${activeSectionId}"] .xra-list`);
     const status = document.querySelector(`.xra-section[data-section-id="${activeSectionId}"] .xra-status`);
-    const count = document.querySelector(`.xra-section[data-section-id="${activeSectionId}"] .xra-section-count`);
+    const count = document.querySelector(`.xra-section-tab[data-section-id="${activeSectionId}"] .xra-section-count`);
     if (!section || !list || !status || !count) return;
     if (!section.url) { list.innerHTML = '<div class="xra-message">このリストのURLが未設定です。<br>スクリプト上部のCONFIG.sectionsへXリストURLを入力してください。</div>'; status.textContent = "未設定"; count.textContent = "—"; return; }
     const existing = new Set(Array.from(list.querySelectorAll(`[${CARD_ATTR}]`)).map(card => card.getAttribute(CARD_ATTR)));
@@ -701,6 +703,8 @@
     const section = CONFIG.sections.find(item => item.id === sectionId); if (!section) return;
     activeSectionId = sectionId;
     document.querySelectorAll(".xra-section").forEach(element => { element.dataset.open = String(element.dataset.sectionId === sectionId); });
+    document.querySelectorAll(".xra-section-tab").forEach(button => { const active = button.dataset.sectionId === sectionId; button.dataset.active = String(active); button.setAttribute("aria-selected", String(active)); });
+    const root = document.getElementById(ROOT_ID); if (root) root.scrollTop = 0;
     if (!section.url) { renderCurrentFeed(); return; }
     const target = new URL(section.url, location.origin), current = new URL(location.href);
     if (current.pathname !== target.pathname) { location.href = section.url; return; }
@@ -708,25 +712,25 @@
   };
 
   const createSection = section => {
-    const wrapper = document.createElement("section"); wrapper.className = "xra-section"; wrapper.dataset.sectionId = section.id; wrapper.dataset.open = String(section.id === activeSectionId);
-    const button = document.createElement("button"); button.className = "xra-section-button"; button.type = "button";
-    const arrow = document.createElement("span"); arrow.className = "xra-arrow"; arrow.textContent = "▼";
+    const panel = document.createElement("section"); panel.id = `xra-section-${section.id}`; panel.className = "xra-section"; panel.dataset.sectionId = section.id; panel.dataset.open = String(section.id === activeSectionId); panel.setAttribute("role", "tabpanel");
+    const tab = document.createElement("button"); tab.className = "xra-section-tab"; tab.type = "button"; tab.dataset.sectionId = section.id; tab.dataset.active = String(section.id === activeSectionId); tab.setAttribute("role", "tab"); tab.setAttribute("aria-selected", String(section.id === activeSectionId)); tab.setAttribute("aria-controls", panel.id);
     const label = document.createElement("span"); label.textContent = section.label;
     const count = document.createElement("span"); count.className = "xra-section-count"; count.textContent = section.url ? "…" : "—";
-    button.append(arrow, label, count); button.addEventListener("click", () => switchSection(section.id));
+    tab.append(label, count); tab.addEventListener("click", () => switchSection(section.id));
     const content = document.createElement("div"); content.className = "xra-content";
     const status = document.createElement("div"); status.className = "xra-status"; status.textContent = section.url ? "投稿を読み込んでいます" : "未設定";
     const list = document.createElement("div"); list.className = "xra-list";
-    content.append(status, list); wrapper.append(button, content); return wrapper;
+    content.append(status, list); panel.appendChild(content); return { tab, panel };
   };
 
   const createRoot = () => {
     if (document.getElementById(ROOT_ID)) return;
     const root = document.createElement("div"); root.id = ROOT_ID;
     const header = document.createElement("header"); header.className = "xra-header";
-    const title = document.createElement("div"); title.className = "xra-title"; title.textContent = "フィード";
-    header.appendChild(title);
-    const sections = document.createElement("main"); sections.className = "xra-sections"; CONFIG.sections.forEach(section => sections.appendChild(createSection(section)));
+    const tabs = document.createElement("nav"); tabs.className = "xra-tabs"; tabs.setAttribute("role", "tablist"); tabs.setAttribute("aria-label", "リストを切り替える");
+    const sections = document.createElement("main"); sections.className = "xra-sections";
+    CONFIG.sections.forEach(section => { const elements = createSection(section); tabs.appendChild(elements.tab); sections.appendChild(elements.panel); });
+    header.appendChild(tabs);
 
     const bookmarksList = document.createElement("button");
     bookmarksList.id = BOOKMARKS_LIST_ID;
@@ -913,7 +917,7 @@
       .map(span => (span.textContent || "").trim())
       .filter(Boolean);
 
-    const handle = spans.find(value => value.startsWith("@")) || "";
+    const handle = (spans.find(value => value.startsWith("@")) || "").replace(/^@/, "");
     const name = spans.find(value =>
       !value.startsWith("@") &&
       value !== "·" &&
