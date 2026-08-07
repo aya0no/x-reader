@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         X Reader Accordion v7.0.4-step11-light
 // @namespace    local.x-reader-accordion
-// @version      7.0.4.12.2
-// @description  添付画像とブックマークを重ねず、リンクカードと操作を使いやすく整えたモノクロ軽量版です。
+// @version      7.0.4.12.3
+// @description  IDの@を省き、リストを固定タブですぐ切り替えられるモノクロ軽量版です。
 // @match        https://x.com/*
 // @match        https://twitter.com/*
 // @updateURL    https://raw.githubusercontent.com/aya0no/x-reader/main/x-reader.meta.js
