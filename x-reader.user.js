@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         X Reader Accordion v7.0.4-step11-light
 // @namespace    local.x-reader-accordion
-// @version      7.0.4.12.0
-// @description  リンクカード、画像ポップアップ、下部アイコンを使いやすく整えたモノクロ軽量版です。
+// @version      7.0.4.12.1
+// @description  添付画像だけを正しく判定し、リンクカードと操作を使いやすく整えたモノクロ軽量版です。
 // @match        https://x.com/*
 // @match        https://twitter.com/*
 // @updateURL    https://raw.githubusercontent.com/aya0no/x-reader/main/x-reader.meta.js
@@ -541,9 +541,7 @@
   const getMediaSource = article => {
     const candidates = [
       ...article.querySelectorAll('[data-testid="tweetPhoto"] img[src]'),
-      ...article.querySelectorAll("video[poster]"),
-      ...article.querySelectorAll('[data-testid="card.wrapper"] img[src]'),
-      ...article.querySelectorAll("img[src]")
+      ...article.querySelectorAll("video[poster]")
     ];
     for (const media of candidates) {
       if (media.closest('[data-testid="Tweet-User-Avatar"], [data-testid="UserAvatar-Container"]')) continue;
@@ -551,7 +549,7 @@
       if (!source || source.includes("profile_images") || source.includes("emoji")) continue;
       return source;
     }
-    const styledMedia = article.querySelector('[style*="background-image"]:not([data-testid="Tweet-User-Avatar"])');
+    const styledMedia = article.querySelector('[data-testid="videoPlayer"][style*="background-image"], [data-testid="videoPlayer"] [style*="background-image"]');
     const background = styledMedia?.style?.backgroundImage || "";
     return background.match(/url\(["']?(.*?)["']?\)/)?.[1] || "";
   };
