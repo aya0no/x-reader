@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         X Reader Accordion v7.0.4-step11-light
 // @namespace    local.x-reader-accordion
-// @version      7.0.4.11.2
-// @description  Step11のモノクロ切替アイコンを維持し、不要なSVG再生成と定期再処理を抑えた軽量版です。
+// @version      7.0.4.12.0
+// @description  リンクカード、画像ポップアップ、下部アイコンを使いやすく整えたモノクロ軽量版です。
 // @match        https://x.com/*
 // @match        https://twitter.com/*
 // @updateURL    https://raw.githubusercontent.com/aya0no/x-reader/main/x-reader.meta.js
@@ -20,16 +20,17 @@
   const CARD_ATTR = "data-xra-card";
   const DETAIL_ROOT_ID = "xra-detail-root";
   const BOOKMARKS_LIST_ID = "xra-bookmarks-list";
+  const MEDIA_MODAL_ID = "xra-media-modal";
 
   const CONFIG = {
     fontSize: 12.5,
     lineHeight: 1.5,
-    imageWidth: 84,
-    imageHeight: 64,
+    imageWidth: 92,
+    imageHeight: 72,
     monochrome: true,
     sections: [
       { id: "following", label: "フォロー中", url: "https://x.com/home" },
-      { id: "it", label: "IT", url: "" },
+      { id: "it", label: "IT", url: "https://x.com/i/lists/1581596744466321408" },
       { id: "nail", label: "ネイル", url: "" },
       { id: "movie", label: "映画", url: "" },
       { id: "investment", label: "投資", url: "" }
@@ -38,29 +39,44 @@
 
   let activeSectionId = "following";
   let renderTimer = null;
+  let preloadLocked = false;
 
   const css = `
-    #${ROOT_ID} { position: fixed; inset: 0; z-index: 2147483000; overflow-y: auto; background: #f7f7f7; color: #171717; font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Yu Gothic UI", "Yu Gothic", sans-serif; -webkit-overflow-scrolling: touch; }
+    #${ROOT_ID} { position: fixed; inset: 0; z-index: 2147483000; overflow-y: auto; background: #f7f7f5; color: #171717; font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Yu Gothic UI", "Yu Gothic", sans-serif; -webkit-overflow-scrolling: touch; }
     #${ROOT_ID} * { box-sizing: border-box; }
-    .xra-header { position: sticky; top: 0; z-index: 20; display: flex; align-items: center; justify-content: space-between; min-height: 46px; padding: 7px 12px; background: rgba(247,247,247,.96); border-bottom: 1px solid #ddd; backdrop-filter: blur(12px); }
-    .xra-title { font-size: 14px; font-weight: 700; }
-    .xra-close { height: 30px; padding: 0 10px; border: 1px solid #cfcfcf; border-radius: 15px; background: #fff; color: #222; font-size: 11px; }
-    .xra-sections { max-width: 720px; margin: 0 auto; background: #fff; border-left: 1px solid #e0e0e0; border-right: 1px solid #e0e0e0; }
-    .xra-section { border-bottom: 1px solid #ddd; }
-    .xra-section-button { display: flex; align-items: center; width: 100%; min-height: 42px; padding: 0 12px; border: 0; background: #fff; color: #171717; font-size: 12px; font-weight: 650; text-align: left; }
+    .xra-header { position: sticky; top: 0; z-index: 20; display: flex; align-items: center; min-height: 46px; padding: 7px 14px; background: rgba(247,247,245,.96); border-bottom: 1px solid #ddd; backdrop-filter: blur(12px); }
+    .xra-title { width: 100%; max-width: 680px; margin: 0 auto; font-size: 14px; font-weight: 700; }
+    .xra-sections { max-width: 680px; margin: 0 auto; }
+    .xra-section { border-bottom: 1px solid #dededb; }
+    .xra-section-button { display: flex; align-items: center; width: 100%; min-height: 42px; padding: 0 12px; border: 0; background: transparent; color: #171717; font-size: 12px; font-weight: 650; text-align: left; }
     .xra-arrow { display: inline-block; width: 18px; margin-right: 4px; font-size: 11px; transition: transform .15s ease; }
+    .xra-section-count { min-width: 24px; margin-left: auto; padding: 2px 7px; border: 1px solid #d3d3d0; border-radius: 10px; color: #666; font-size: 9.5px; font-variant-numeric: tabular-nums; text-align: center; }
     .xra-section[data-open="false"] .xra-arrow { transform: rotate(-90deg); }
     .xra-content { display: none; }
     .xra-section[data-open="true"] .xra-content { display: block; }
-    .xra-status { padding: 6px 12px; border-top: 1px solid #eee; border-bottom: 1px solid #eee; background: #fafafa; color: #777; font-size: 10px; text-align: center; }
-    .xra-card { display: grid; grid-template-columns: minmax(0,1fr) auto; gap: 7px; padding: 7px 10px; border-bottom: 1px solid #e2e2e2; background: #fff; cursor: pointer; -webkit-tap-highlight-color: transparent; }
+    .xra-status { padding: 6px 12px 3px; color: #777; font-size: 10px; text-align: center; }
+    .xra-list { padding: 8px 0 76px; }
+    .xra-card { position: relative; display: grid; grid-template-columns: minmax(0,1fr); gap: 8px; margin: 0 10px 8px; padding: 13px 14px; border: 1px solid #dededb; border-radius: 13px; background: #fff; cursor: pointer; -webkit-tap-highlight-color: transparent; }
+    .xra-card.has-media { grid-template-columns: minmax(0,1fr) ${CONFIG.imageWidth}px; }
     .xra-main { min-width: 0; }
-    .xra-meta { display: flex; gap: 5px; min-height: 14px; margin-bottom: 2px; overflow: hidden; white-space: nowrap; }
-    .xra-handle { overflow: hidden; font-size: 11px; font-weight: 650; text-overflow: ellipsis; }
-    .xra-time { flex: 0 0 auto; color: #777; font-size: 10px; }
-    .xra-text { display: -webkit-box; overflow: hidden; font-size: ${CONFIG.fontSize}px; line-height: 1.42; white-space: pre-wrap; word-break: break-word; -webkit-box-orient: vertical; -webkit-line-clamp: 7; }
-    .xra-media { width: ${CONFIG.imageWidth}px; height: ${CONFIG.imageHeight}px; align-self: center; overflow: hidden; border: 1px solid #ddd; border-radius: 7px; background: #eee; }
+    .xra-card:not(.has-media) .xra-main { padding-right: 28px; }
+    .xra-meta { display: flex; gap: 5px; min-height: 14px; margin-bottom: 3px; overflow: hidden; white-space: nowrap; }
+    .xra-handle { overflow: hidden; font-size: 11.5px; font-weight: 650; text-overflow: ellipsis; }
+    .xra-time { flex: 0 0 auto; color: #777; font-size: 10.5px; }
+    .xra-text { display: -webkit-box; overflow: hidden; font-size: ${CONFIG.fontSize}px; line-height: 1.45; white-space: pre-wrap; word-break: break-word; -webkit-box-orient: vertical; -webkit-line-clamp: 7; }
+    .xra-media { width: ${CONFIG.imageWidth}px; height: ${CONFIG.imageHeight}px; align-self: start; padding: 0; overflow: hidden; border: 1px solid #d5d5d2; border-radius: 8px; background: #eee; cursor: zoom-in; }
     .xra-media img { display: block; width: 100%; height: 100%; object-fit: cover; ${CONFIG.monochrome ? "filter: grayscale(1);" : ""} }
+    .xra-link-card { display: block; width: 100%; margin-top: 8px; padding: 7px 8px; overflow: hidden; border: 1px solid #d8d8d5; border-radius: 9px; background: #fafaf8; color: #171717; text-align: left; }
+    .xra-link-site { overflow: hidden; color: #777; font-size: 9.5px; text-overflow: ellipsis; white-space: nowrap; }
+    .xra-link-title { display: -webkit-box; margin-top: 1px; overflow: hidden; font-size: 11.5px; font-weight: 650; line-height: 1.35; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+    .xra-link-summary { display: -webkit-box; margin-top: 2px; overflow: hidden; color: #666; font-size: 10.5px; line-height: 1.35; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+    .xra-card-bookmark { position: absolute; top: 10px; right: 10px; display: flex; align-items: center; justify-content: center; width: 25px; height: 25px; padding: 0; border: 1px solid #cfcfcb; border-radius: 50%; background: rgba(255,255,255,.94); color: #333; }
+    .xra-card.has-media .xra-card-bookmark { top: 17px; right: 18px; }
+    .xra-card-bookmark svg { display: block; width: 13px; height: 13px; fill: currentColor; }
+    .xra-card-bookmark[data-saved="true"] { border-color: #171717; background: #171717; color: #fff; }
+    #${MEDIA_MODAL_ID} { position: fixed; inset: 0; z-index: 2147483647; display: flex; align-items: center; justify-content: center; padding: 44px 18px calc(44px + env(safe-area-inset-bottom, 0px)); background: rgba(0,0,0,.76); }
+    #${MEDIA_MODAL_ID} img { display: block; max-width: 88vw; max-height: 72vh; border: 1px solid #777; border-radius: 10px; background: #222; object-fit: contain; ${CONFIG.monochrome ? "filter: grayscale(1);" : ""} }
+    .xra-media-close { position: absolute; top: calc(12px + env(safe-area-inset-top, 0px)); right: 14px; display: flex; align-items: center; justify-content: center; width: 36px; height: 36px; padding: 0; border: 1px solid #888; border-radius: 50%; background: rgba(20,20,20,.86); color: #fff; font-size: 24px; font-weight: 300; line-height: 1; }
     .xra-message { padding: 22px 14px; color: #777; font-size: 11px; line-height: 1.6; text-align: center; }
     #${TOGGLE_ID} {
       position: fixed;
@@ -472,25 +488,23 @@
 
     #${BOOKMARKS_LIST_ID} {
       position: fixed;
-      right: 66px;
+      right: 64px;
       bottom: calc(18px + env(safe-area-inset-bottom, 0px));
       z-index: 2147483646;
-      display: inline-flex;
+      display: flex;
       align-items: center;
       justify-content: center;
-      gap: 6px;
+      width: 44px;
       height: 44px;
-      padding: 0 13px;
+      padding: 0;
       border: 1px solid #bdbdbd;
-      border-radius: 22px;
+      border-radius: 50%;
       background: rgba(255,255,255,.96);
       color: #222;
       font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans",
         "Yu Gothic UI", "Yu Gothic", sans-serif !important;
-      font-size: 11px;
-      font-weight: 650;
+      font-size: 0;
       line-height: 1;
-      white-space: nowrap;
       box-shadow: 0 4px 14px rgba(0,0,0,.14);
       backdrop-filter: blur(12px);
       -webkit-tap-highlight-color: transparent;
@@ -498,8 +512,8 @@
 
     #${BOOKMARKS_LIST_ID} svg {
       display: block;
-      width: 16px;
-      height: 16px;
+      width: 19px;
+      height: 19px;
       flex: 0 0 auto;
       color: currentColor !important;
       fill: currentColor !important;
@@ -522,9 +536,79 @@
   const textOf = element => (element?.textContent || "").trim();
   const getHandle = article => { const userName = article.querySelector('[data-testid="User-Name"]'); if (!userName) return ""; return Array.from(userName.querySelectorAll("span")).map(textOf).find(text => text.startsWith("@")) || ""; };
   const getTime = article => { const time = article.querySelector("time"); return time ? textOf(time) : ""; };
-  const getText = article => { const tweetText = article.querySelector('[data-testid="tweetText"]'); return tweetText ? tweetText.innerText.trim() : ""; };
+  const getText = article => { const tweetText = article.querySelector('[data-testid="tweetText"]'); return (tweetText?.innerText || tweetText?.textContent || "").trim(); };
   const getPostUrl = article => { const link = article.querySelector('a[href*="/status/"]'); if (!link) return ""; const href = link.getAttribute("href") || ""; return href.startsWith("http") ? href : `${location.origin}${href}`; };
-  const getMediaSource = article => { const images = Array.from(article.querySelectorAll("img[src]")).filter(img => { const src = img.currentSrc || img.src || ""; if (!src || src.includes("profile_images") || src.includes("emoji")) return false; if (img.closest('[data-testid="Tweet-User-Avatar"]')) return false; return true; }); const image = images.find(img => { const rect = img.getBoundingClientRect(); return rect.width > 70 || rect.height > 70; }); return image ? image.currentSrc || image.src : ""; };
+  const getMediaSource = article => {
+    const candidates = [
+      ...article.querySelectorAll('[data-testid="tweetPhoto"] img[src]'),
+      ...article.querySelectorAll("video[poster]"),
+      ...article.querySelectorAll('[data-testid="card.wrapper"] img[src]'),
+      ...article.querySelectorAll("img[src]")
+    ];
+    for (const media of candidates) {
+      if (media.closest('[data-testid="Tweet-User-Avatar"], [data-testid="UserAvatar-Container"]')) continue;
+      const source = media.tagName === "VIDEO" ? media.poster || media.getAttribute("poster") || "" : media.currentSrc || media.src || media.getAttribute("src") || "";
+      if (!source || source.includes("profile_images") || source.includes("emoji")) continue;
+      return source;
+    }
+    const styledMedia = article.querySelector('[style*="background-image"]:not([data-testid="Tweet-User-Avatar"])');
+    const background = styledMedia?.style?.backgroundImage || "";
+    return background.match(/url\(["']?(.*?)["']?\)/)?.[1] || "";
+  };
+  const getLinkPreview = article => {
+    const wrapper = article.querySelector('[data-testid="card.wrapper"]');
+    if (!wrapper) return null;
+    const isUsableLink = href => {
+      if (!href) return false;
+      try {
+        const url = new URL(href, location.origin);
+        if (!/^https?:$/.test(url.protocol)) return false;
+        const host = url.hostname.replace(/^www\./, "");
+        return host !== "x.com" && host !== "twitter.com" && !host.endsWith(".x.com") && !host.endsWith(".twitter.com");
+      } catch { return false; }
+    };
+    const links = [wrapper.closest("a[href]"), ...wrapper.querySelectorAll("a[href]"), ...article.querySelectorAll("a[href]")].filter(Boolean);
+    const anchor = links.find(link => isUsableLink(link.getAttribute("href") || ""));
+    if (!anchor) return null;
+    const href = anchor.getAttribute("href") || "";
+    const url = new URL(href, location.origin).href;
+    const rawLines = (wrapper.innerText || wrapper.textContent || "").split(/\n+/);
+    const spanLines = Array.from(wrapper.querySelectorAll("span")).map(textOf);
+    const ariaLabel = wrapper.getAttribute("aria-label") || "";
+    const preferredLines = spanLines.filter(Boolean).length >= 2 ? spanLines : rawLines;
+    const lines = Array.from(new Set([...preferredLines, ariaLabel].map(line => line.replace(/\s+/g, " ").trim()).filter(line => line && line !== "画像")));
+    const domainLine = lines.find(line => /\b(?:[a-z0-9-]+\.)+[a-z]{2,}\b/i.test(line));
+    const host = new URL(url).hostname.replace(/^www\./, "");
+    const site = domainLine || host;
+    const contentLines = lines.filter(line => line !== domainLine && line !== url && line !== href);
+    return { url, site, title: contentLines[0] || "リンクを開く", summary: contentLines.slice(1).join(" ").slice(0, 180) };
+  };
+  const getLargeMediaUrl = source => {
+    try {
+      const url = new URL(source, location.href);
+      if (url.hostname.endsWith("twimg.com")) url.searchParams.set("name", "large");
+      return url.href;
+    } catch { return source; }
+  };
+  const closeFeedMediaModal = () => {
+    const modal = document.getElementById(MEDIA_MODAL_ID);
+    if (!modal) return;
+    modal.xraCleanup?.();
+    modal.remove();
+  };
+  const openFeedMediaModal = source => {
+    if (!source) return;
+    closeFeedMediaModal();
+    const modal = document.createElement("div"); modal.id = MEDIA_MODAL_ID; modal.setAttribute("role", "dialog"); modal.setAttribute("aria-modal", "true"); modal.setAttribute("aria-label", "投稿画像");
+    const image = document.createElement("img"); image.src = getLargeMediaUrl(source); image.alt = "投稿画像";
+    const close = document.createElement("button"); close.className = "xra-media-close"; close.type = "button"; close.setAttribute("aria-label", "閉じる"); close.textContent = "×";
+    const onKeyDown = event => { if (event.key === "Escape") closeFeedMediaModal(); };
+    modal.xraCleanup = () => document.removeEventListener("keydown", onKeyDown);
+    modal.addEventListener("click", event => { if (event.target === modal) closeFeedMediaModal(); });
+    close.addEventListener("click", closeFeedMediaModal);
+    document.addEventListener("keydown", onKeyDown);
+    modal.append(image, close); document.body.appendChild(modal);
+  };
   const isPromoted = article => {
     const text = article.innerText || "";
     return ["プロモーション", "Promoted", "広告", "おすすめ", "Who to follow", "おすすめユーザー"]
@@ -536,21 +620,58 @@
     return false;
   };
 
-  const getPostKey = article => getPostUrl(article) || [getHandle(article), getTime(article), getText(article).slice(0,80)].join("|");
+  const getPostKey = article => getPostUrl(article) || [getHandle(article), getTime(article), getText(article).slice(0,80), textOf(article.querySelector('[data-testid="card.wrapper"]')).slice(0,80)].join("|");
+  const findSourceArticle = (original, key, postUrl) => {
+    if (original?.isConnected) return original;
+    return Array.from(document.querySelectorAll("article")).find(article => !article.closest(`#${ROOT_ID}`) && (postUrl ? getPostUrl(article) === postUrl : getPostKey(article) === key)) || null;
+  };
 
   const createCard = article => {
     if (isPromoted(article) || isReply(article)) return null;
-    const handle = getHandle(article), time = getTime(article), text = getText(article), postUrl = getPostUrl(article), mediaSrc = getMediaSource(article);
-    if (!handle && !text) return null;
-    const card = document.createElement("article"); card.className = "xra-card"; card.setAttribute(CARD_ATTR, getPostKey(article));
+    const handle = getHandle(article), time = getTime(article), text = getText(article), postUrl = getPostUrl(article), mediaSrc = getMediaSource(article), linkPreview = getLinkPreview(article), key = getPostKey(article);
+    if (!handle && !text && !linkPreview) return null;
+    const card = document.createElement("article"); card.className = `xra-card${mediaSrc ? " has-media" : ""}`; card.setAttribute(CARD_ATTR, key);
     const main = document.createElement("div"); main.className = "xra-main";
     const meta = document.createElement("div"); meta.className = "xra-meta";
     const handleEl = document.createElement("div"); handleEl.className = "xra-handle"; handleEl.textContent = handle || "@unknown";
     const timeEl = document.createElement("div"); timeEl.className = "xra-time"; timeEl.textContent = time;
     const textEl = document.createElement("div"); textEl.className = "xra-text"; textEl.textContent = text;
-    meta.append(handleEl, timeEl); main.append(meta, textEl); card.appendChild(main);
-    if (mediaSrc) { const media = document.createElement("div"); media.className = "xra-media"; const img = document.createElement("img"); img.src = mediaSrc; img.alt = ""; img.loading = "lazy"; media.appendChild(img); card.appendChild(media); }
+    meta.append(handleEl, timeEl); main.appendChild(meta); if (text) main.appendChild(textEl);
+    if (linkPreview) {
+      const linkCard = document.createElement("button"); linkCard.className = "xra-link-card"; linkCard.type = "button"; linkCard.setAttribute("aria-label", `${linkPreview.title}を開く`);
+      const site = document.createElement("div"); site.className = "xra-link-site"; site.textContent = linkPreview.site;
+      const title = document.createElement("div"); title.className = "xra-link-title"; title.textContent = linkPreview.title;
+      linkCard.append(site, title);
+      if (linkPreview.summary) { const summary = document.createElement("div"); summary.className = "xra-link-summary"; summary.textContent = linkPreview.summary; linkCard.appendChild(summary); }
+      linkCard.addEventListener("click", event => { event.stopPropagation(); location.href = linkPreview.url; });
+      main.appendChild(linkCard);
+    }
+    card.appendChild(main);
+    if (mediaSrc) {
+      const media = document.createElement("button"); media.className = "xra-media"; media.type = "button"; media.setAttribute("aria-label", "画像を拡大");
+      const img = document.createElement("img"); img.src = mediaSrc; img.alt = ""; img.loading = "lazy"; img.decoding = "async";
+      media.appendChild(img); media.addEventListener("click", event => { event.stopPropagation(); openFeedMediaModal(mediaSrc); }); card.appendChild(media);
+    }
+    if (findNativeBookmarkButton(article)) {
+      const bookmark = document.createElement("button"); bookmark.className = "xra-card-bookmark"; bookmark.type = "button"; bookmark.appendChild(createFallbackBookmarkSvg());
+      const syncBookmark = () => {
+        const sourceArticle = findSourceArticle(article, key, postUrl);
+        const nativeButton = findNativeBookmarkButton(sourceArticle);
+        const saved = nativeButton?.getAttribute("data-testid") === "removeBookmark";
+        bookmark.dataset.saved = String(saved);
+        bookmark.setAttribute("aria-label", saved ? "ブックマークを解除" : "ブックマークに追加");
+      };
+      bookmark.addEventListener("click", event => {
+        event.stopPropagation();
+        const sourceArticle = findSourceArticle(article, key, postUrl);
+        const nativeButton = findNativeBookmarkButton(sourceArticle);
+        if (!nativeButton) return;
+        nativeButton.click(); setTimeout(syncBookmark, 100); setTimeout(syncBookmark, 500);
+      });
+      syncBookmark(); card.appendChild(bookmark);
+    }
     card.addEventListener("click", () => { if (postUrl) location.href = postUrl; });
+    if (postUrl) { card.tabIndex = 0; card.setAttribute("role", "link"); card.addEventListener("keydown", event => { if (event.target === card && (event.key === "Enter" || event.key === " ")) { event.preventDefault(); location.href = postUrl; } }); }
     return card;
   };
 
@@ -559,14 +680,24 @@
     const section = currentSection();
     const list = document.querySelector(`.xra-section[data-section-id="${activeSectionId}"] .xra-list`);
     const status = document.querySelector(`.xra-section[data-section-id="${activeSectionId}"] .xra-status`);
-    if (!section || !list || !status) return;
-    if (!section.url) { list.innerHTML = '<div class="xra-message">このリストのURLが未設定です。<br>スクリプト上部のCONFIG.sectionsへXリストURLを入力してください。</div>'; status.textContent = "未設定"; return; }
+    const count = document.querySelector(`.xra-section[data-section-id="${activeSectionId}"] .xra-section-count`);
+    if (!section || !list || !status || !count) return;
+    if (!section.url) { list.innerHTML = '<div class="xra-message">このリストのURLが未設定です。<br>スクリプト上部のCONFIG.sectionsへXリストURLを入力してください。</div>'; status.textContent = "未設定"; count.textContent = "—"; return; }
     const existing = new Set(Array.from(list.querySelectorAll(`[${CARD_ATTR}]`)).map(card => card.getAttribute(CARD_ATTR)));
     let added = 0;
     document.querySelectorAll("article").forEach(article => { if (article.closest(`#${ROOT_ID}`)) return; const key = getPostKey(article); if (!key || existing.has(key)) return; const card = createCard(article); if (!card) return; list.appendChild(card); existing.add(key); added += 1; });
     if (!list.querySelector(".xra-card") && !list.querySelector(".xra-message")) list.innerHTML = '<div class="xra-message">投稿を読み込んでいます</div>';
     if (added > 0) list.querySelector(".xra-message")?.remove();
-    status.textContent = `${list.querySelectorAll(".xra-card").length}件を表示中`;
+    const total = list.querySelectorAll(".xra-card").length;
+    status.textContent = total ? `${total}件を表示中` : "投稿を読み込んでいます";
+    count.textContent = String(total);
+  };
+
+  const preloadNativeFeed = root => {
+    if (preloadLocked || root.scrollHeight - root.scrollTop - root.clientHeight > 320) return;
+    preloadLocked = true;
+    window.scrollBy(0, Math.max(480, Math.round(window.innerHeight * .82)));
+    setTimeout(() => { preloadLocked = false; renderCurrentFeed(); }, 650);
   };
 
   const switchSection = sectionId => {
@@ -581,7 +712,11 @@
 
   const createSection = section => {
     const wrapper = document.createElement("section"); wrapper.className = "xra-section"; wrapper.dataset.sectionId = section.id; wrapper.dataset.open = String(section.id === activeSectionId);
-    const button = document.createElement("button"); button.className = "xra-section-button"; button.type = "button"; button.innerHTML = `<span class="xra-arrow">▼</span><span>${section.label}</span>`; button.addEventListener("click", () => switchSection(section.id));
+    const button = document.createElement("button"); button.className = "xra-section-button"; button.type = "button";
+    const arrow = document.createElement("span"); arrow.className = "xra-arrow"; arrow.textContent = "▼";
+    const label = document.createElement("span"); label.textContent = section.label;
+    const count = document.createElement("span"); count.className = "xra-section-count"; count.textContent = section.url ? "…" : "—";
+    button.append(arrow, label, count); button.addEventListener("click", () => switchSection(section.id));
     const content = document.createElement("div"); content.className = "xra-content";
     const status = document.createElement("div"); status.className = "xra-status"; status.textContent = section.url ? "投稿を読み込んでいます" : "未設定";
     const list = document.createElement("div"); list.className = "xra-list";
@@ -593,8 +728,7 @@
     const root = document.createElement("div"); root.id = ROOT_ID;
     const header = document.createElement("header"); header.className = "xra-header";
     const title = document.createElement("div"); title.className = "xra-title"; title.textContent = "フィード";
-    const close = document.createElement("button"); close.className = "xra-close"; close.type = "button"; close.textContent = "通常表示"; close.addEventListener("click", disableReader);
-    header.append(title, close);
+    header.appendChild(title);
     const sections = document.createElement("main"); sections.className = "xra-sections"; CONFIG.sections.forEach(section => sections.appendChild(createSection(section)));
 
     const bookmarksList = document.createElement("button");
@@ -602,15 +736,13 @@
     bookmarksList.type = "button";
     bookmarksList.setAttribute("aria-label", "ブックマーク一覧を開く");
 
-    const bookmarksIcon = createFallbackBookmarkSvg();
-    const bookmarksLabel = document.createElement("span");
-    bookmarksLabel.textContent = "ブックマーク一覧";
-    bookmarksList.append(bookmarksIcon, bookmarksLabel);
+    bookmarksList.appendChild(createFallbackBookmarkSvg());
 
     bookmarksList.addEventListener("click", () => {
       location.href = `${location.origin}/i/bookmarks`;
     });
 
+    root.addEventListener("scroll", () => preloadNativeFeed(root), { passive: true });
     root.append(header, sections, bookmarksList); document.body.appendChild(root);
     renderCurrentFeed(); setTimeout(renderCurrentFeed, 400); setTimeout(renderCurrentFeed, 1000); setTimeout(renderCurrentFeed, 1800);
   };
@@ -703,8 +835,8 @@
     }
   };
 
-  const enableReader = () => { localStorage.setItem("xra-enabled", "true"); if (isDetailPage()) { document.getElementById(ROOT_ID)?.remove(); renderToggleButton(); return; } createRoot(); renderToggleButton(); };
-  const disableReader = () => { localStorage.setItem("xra-enabled", "false"); document.getElementById(ROOT_ID)?.remove(); renderToggleButton(); };
+  const enableReader = () => { localStorage.setItem("xra-enabled", "true"); if (isDetailPage()) { closeFeedMediaModal(); document.getElementById(ROOT_ID)?.remove(); renderToggleButton(); return; } createRoot(); renderToggleButton(); };
+  const disableReader = () => { localStorage.setItem("xra-enabled", "false"); closeFeedMediaModal(); document.getElementById(ROOT_ID)?.remove(); renderToggleButton(); };
   const addToggle = () => {
     let button = document.getElementById(TOGGLE_ID);
     if (!button) {
@@ -1020,6 +1152,7 @@
     document.documentElement.classList.toggle("xra-detail-page", detail);
 
     if (detail) {
+      closeFeedMediaModal();
       document.getElementById(ROOT_ID)?.remove();
       renderToggleButton();
       simplifyDetailPage();
@@ -1042,10 +1175,10 @@
 
     return Boolean(
       element.matches?.(
-        `#${ROOT_ID}, #${DETAIL_ROOT_ID}, #${TOGGLE_ID}, #${BOOKMARKS_LIST_ID}`
+        `#${ROOT_ID}, #${DETAIL_ROOT_ID}, #${TOGGLE_ID}, #${BOOKMARKS_LIST_ID}, #${MEDIA_MODAL_ID}`
       ) ||
       element.closest?.(
-        `#${ROOT_ID}, #${DETAIL_ROOT_ID}, #${TOGGLE_ID}, #${BOOKMARKS_LIST_ID}`
+        `#${ROOT_ID}, #${DETAIL_ROOT_ID}, #${TOGGLE_ID}, #${BOOKMARKS_LIST_ID}, #${MEDIA_MODAL_ID}`
       )
     );
   };
