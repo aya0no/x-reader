@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         X Reader Accordion v7.0.4-step11-light
 // @namespace    local.x-reader-accordion
-// @version      7.0.4.12.5
-// @description  ホーム表記のシンプルな固定リストタブへ整えたモノクロ軽量版です。
+// @version      7.0.4.12.6
+// @description  件数表示を省いたシンプルな固定リストタブのモノクロ軽量版です。
 // @match        https://x.com/*
 // @match        https://twitter.com/*
 // @updateURL    https://raw.githubusercontent.com/aya0no/x-reader/main/x-reader.meta.js
@@ -54,7 +54,6 @@
     .xra-section { display: none; }
     .xra-section[data-open="true"] { display: block; }
     .xra-content { display: block; }
-    .xra-status { padding: 6px 12px 3px; color: #777; font-size: 10px; text-align: center; }
     .xra-list { padding: 8px 0 76px; }
     .xra-card { position: relative; display: grid; grid-template-columns: minmax(0,1fr); gap: 8px; margin: 0 10px 8px; padding: 13px 14px; border: 1px solid #dededb; border-radius: 13px; background: #fff; cursor: pointer; -webkit-tap-highlight-color: transparent; }
     .xra-card.has-media { grid-template-columns: minmax(0,1fr) ${CONFIG.imageWidth}px; }
@@ -676,16 +675,13 @@
   const renderCurrentFeed = () => {
     const section = currentSection();
     const list = document.querySelector(`.xra-section[data-section-id="${activeSectionId}"] .xra-list`);
-    const status = document.querySelector(`.xra-section[data-section-id="${activeSectionId}"] .xra-status`);
-    if (!section || !list || !status) return;
-    if (!section.url) { list.innerHTML = '<div class="xra-message">このリストのURLが未設定です。<br>スクリプト上部のCONFIG.sectionsへXリストURLを入力してください。</div>'; status.textContent = "未設定"; return; }
+    if (!section || !list) return;
+    if (!section.url) { list.innerHTML = '<div class="xra-message">このリストのURLが未設定です。<br>スクリプト上部のCONFIG.sectionsへXリストURLを入力してください。</div>'; return; }
     const existing = new Set(Array.from(list.querySelectorAll(`[${CARD_ATTR}]`)).map(card => card.getAttribute(CARD_ATTR)));
     let added = 0;
     document.querySelectorAll("article").forEach(article => { if (article.closest(`#${ROOT_ID}`)) return; const key = getPostKey(article); if (!key || existing.has(key)) return; const card = createCard(article); if (!card) return; list.appendChild(card); existing.add(key); added += 1; });
     if (!list.querySelector(".xra-card") && !list.querySelector(".xra-message")) list.innerHTML = '<div class="xra-message">投稿を読み込んでいます</div>';
     if (added > 0) list.querySelector(".xra-message")?.remove();
-    const total = list.querySelectorAll(".xra-card").length;
-    status.textContent = total ? `${total}件を表示中` : "投稿を読み込んでいます";
   };
 
   const preloadNativeFeed = root => {
@@ -713,9 +709,8 @@
     const label = document.createElement("span"); label.textContent = section.label;
     tab.appendChild(label); tab.addEventListener("click", () => switchSection(section.id));
     const content = document.createElement("div"); content.className = "xra-content";
-    const status = document.createElement("div"); status.className = "xra-status"; status.textContent = section.url ? "投稿を読み込んでいます" : "未設定";
     const list = document.createElement("div"); list.className = "xra-list";
-    content.append(status, list); panel.appendChild(content); return { tab, panel };
+    content.appendChild(list); panel.appendChild(content); return { tab, panel };
   };
 
   const createRoot = () => {
