@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         X Reader Accordion v7.0.4-step11-light
 // @namespace    local.x-reader-accordion
-// @version      7.0.4.12.6
-// @description  件数表示を省いたシンプルな固定リストタブのモノクロ軽量版です。
+// @version      7.0.4.12.7
+// @description  ホーム、1、2、株、レシピを固定タブで切り替えるモノクロ軽量版です。
 // @match        https://x.com/*
 // @match        https://twitter.com/*
 // @updateURL    https://raw.githubusercontent.com/aya0no/x-reader/main/x-reader.meta.js
@@ -30,10 +30,10 @@
     monochrome: true,
     sections: [
       { id: "following", label: "ホーム", url: "https://x.com/home" },
-      { id: "it", label: "IT", url: "https://x.com/i/lists/1581596744466321408" },
-      { id: "nail", label: "ネイル", url: "" },
-      { id: "movie", label: "映画", url: "" },
-      { id: "investment", label: "投資", url: "" }
+      { id: "list1", label: "1", url: "https://x.com/i/lists/2082771236799840538" },
+      { id: "list2", label: "2", url: "https://x.com/i/lists/962319313385308166" },
+      { id: "stocks", label: "株", url: "https://x.com/i/lists/1581596744466321408" },
+      { id: "recipes", label: "レシピ", url: "https://x.com/i/lists/1718964496667156737" }
     ]
   };
 
