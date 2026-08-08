@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         X Reader Accordion v7.0.4-step11-light
 // @namespace    local.x-reader-accordion
-// @version      7.0.4.12.4
-// @description  IDの@を省き、iPhoneでもリストタブを画面上部へ確実に固定するモノクロ軽量版です。
+// @version      7.0.4.12.5
+// @description  ホーム表記のシンプルな固定リストタブへ整えたモノクロ軽量版です。
 // @match        https://x.com/*
 // @match        https://twitter.com/*
 // @updateURL    https://raw.githubusercontent.com/aya0no/x-reader/main/x-reader.meta.js
@@ -29,7 +29,7 @@
     imageHeight: 72,
     monochrome: true,
     sections: [
-      { id: "following", label: "フォロー中", url: "https://x.com/home" },
+      { id: "following", label: "ホーム", url: "https://x.com/home" },
       { id: "it", label: "IT", url: "https://x.com/i/lists/1581596744466321408" },
       { id: "nail", label: "ネイル", url: "" },
       { id: "movie", label: "映画", url: "" },
@@ -50,8 +50,6 @@
     .xra-section-tab { display: inline-flex; flex: 0 0 auto; align-items: center; justify-content: center; min-height: 31px; padding: 0 11px; border: 1px solid #cececa; border-radius: 16px; background: #fff; color: #444; font-size: 11.5px; font-weight: 650; white-space: nowrap; }
     .xra-section-tab[data-active="true"] { border-color: #171717; background: #171717; color: #fff; }
     .xra-section-tab:active { transform: scale(.97); }
-    .xra-section-count { min-width: 12px; margin-left: 5px; color: #777; font-size: 9px; font-variant-numeric: tabular-nums; text-align: center; }
-    .xra-section-tab[data-active="true"] .xra-section-count { color: rgba(255,255,255,.76); }
     .xra-sections { max-width: 680px; margin: 0 auto; padding-top: 46px; }
     .xra-section { display: none; }
     .xra-section[data-open="true"] { display: block; }
@@ -679,9 +677,8 @@
     const section = currentSection();
     const list = document.querySelector(`.xra-section[data-section-id="${activeSectionId}"] .xra-list`);
     const status = document.querySelector(`.xra-section[data-section-id="${activeSectionId}"] .xra-status`);
-    const count = document.querySelector(`.xra-section-tab[data-section-id="${activeSectionId}"] .xra-section-count`);
-    if (!section || !list || !status || !count) return;
-    if (!section.url) { list.innerHTML = '<div class="xra-message">このリストのURLが未設定です。<br>スクリプト上部のCONFIG.sectionsへXリストURLを入力してください。</div>'; status.textContent = "未設定"; count.textContent = "—"; return; }
+    if (!section || !list || !status) return;
+    if (!section.url) { list.innerHTML = '<div class="xra-message">このリストのURLが未設定です。<br>スクリプト上部のCONFIG.sectionsへXリストURLを入力してください。</div>'; status.textContent = "未設定"; return; }
     const existing = new Set(Array.from(list.querySelectorAll(`[${CARD_ATTR}]`)).map(card => card.getAttribute(CARD_ATTR)));
     let added = 0;
     document.querySelectorAll("article").forEach(article => { if (article.closest(`#${ROOT_ID}`)) return; const key = getPostKey(article); if (!key || existing.has(key)) return; const card = createCard(article); if (!card) return; list.appendChild(card); existing.add(key); added += 1; });
@@ -689,7 +686,6 @@
     if (added > 0) list.querySelector(".xra-message")?.remove();
     const total = list.querySelectorAll(".xra-card").length;
     status.textContent = total ? `${total}件を表示中` : "投稿を読み込んでいます";
-    count.textContent = String(total);
   };
 
   const preloadNativeFeed = root => {
@@ -715,8 +711,7 @@
     const panel = document.createElement("section"); panel.id = `xra-section-${section.id}`; panel.className = "xra-section"; panel.dataset.sectionId = section.id; panel.dataset.open = String(section.id === activeSectionId); panel.setAttribute("role", "tabpanel");
     const tab = document.createElement("button"); tab.className = "xra-section-tab"; tab.type = "button"; tab.dataset.sectionId = section.id; tab.dataset.active = String(section.id === activeSectionId); tab.setAttribute("role", "tab"); tab.setAttribute("aria-selected", String(section.id === activeSectionId)); tab.setAttribute("aria-controls", panel.id);
     const label = document.createElement("span"); label.textContent = section.label;
-    const count = document.createElement("span"); count.className = "xra-section-count"; count.textContent = section.url ? "…" : "—";
-    tab.append(label, count); tab.addEventListener("click", () => switchSection(section.id));
+    tab.appendChild(label); tab.addEventListener("click", () => switchSection(section.id));
     const content = document.createElement("div"); content.className = "xra-content";
     const status = document.createElement("div"); status.className = "xra-status"; status.textContent = section.url ? "投稿を読み込んでいます" : "未設定";
     const list = document.createElement("div"); list.className = "xra-list";
