@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         X Reader Accordion v7.0.4-step11-light
 // @namespace    local.x-reader-accordion
-// @version      7.0.4.12.3
-// @description  IDの@を省き、リストを固定タブですぐ切り替えられるモノクロ軽量版です。
+// @version      7.0.4.12.4
+// @description  IDの@を省き、iPhoneでもリストタブを画面上部へ確実に固定するモノクロ軽量版です。
 // @match        https://x.com/*
 // @match        https://twitter.com/*
 // @updateURL    https://raw.githubusercontent.com/aya0no/x-reader/main/x-reader.meta.js
@@ -44,7 +44,7 @@
   const css = `
     #${ROOT_ID} { position: fixed; inset: 0; z-index: 2147483000; overflow-y: auto; background: #f7f7f5; color: #171717; font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Yu Gothic UI", "Yu Gothic", sans-serif; -webkit-overflow-scrolling: touch; }
     #${ROOT_ID} * { box-sizing: border-box; }
-    .xra-header { position: sticky; top: 0; z-index: 20; display: flex; align-items: center; min-height: 46px; padding: 7px 10px; background: rgba(247,247,245,.96); border-bottom: 1px solid #ddd; backdrop-filter: blur(12px); }
+    .xra-header { position: fixed; top: 0; right: 0; left: 0; z-index: 20; display: flex; align-items: center; min-height: 46px; padding: 7px 10px; background: rgba(247,247,245,.96); border-bottom: 1px solid #ddd; backdrop-filter: blur(12px); }
     .xra-tabs { display: flex; gap: 6px; width: 100%; max-width: 680px; margin: 0 auto; overflow-x: auto; scrollbar-width: none; -webkit-overflow-scrolling: touch; }
     .xra-tabs::-webkit-scrollbar { display: none; }
     .xra-section-tab { display: inline-flex; flex: 0 0 auto; align-items: center; justify-content: center; min-height: 31px; padding: 0 11px; border: 1px solid #cececa; border-radius: 16px; background: #fff; color: #444; font-size: 11.5px; font-weight: 650; white-space: nowrap; }
@@ -52,7 +52,7 @@
     .xra-section-tab:active { transform: scale(.97); }
     .xra-section-count { min-width: 12px; margin-left: 5px; color: #777; font-size: 9px; font-variant-numeric: tabular-nums; text-align: center; }
     .xra-section-tab[data-active="true"] .xra-section-count { color: rgba(255,255,255,.76); }
-    .xra-sections { max-width: 680px; margin: 0 auto; }
+    .xra-sections { max-width: 680px; margin: 0 auto; padding-top: 46px; }
     .xra-section { display: none; }
     .xra-section[data-open="true"] { display: block; }
     .xra-content { display: block; }
