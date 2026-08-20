@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         X Reader Accordion v7.0.4-step11-light
 // @namespace    local.x-reader-accordion
-// @version      7.0.4.13.0
-// @description  コンパクト表示と画像を大きく見せるゆったり表示を切り替えられるX Readerです。
+// @version      7.0.4.13.1
+// @description  コンパクト・ゆったり表示と、左右スワイプのリスト切替に対応したX Readerです。
 // @match        https://x.com/*
 // @match        https://twitter.com/*
 // @updateURL    https://raw.githubusercontent.com/aya0no/x-reader/main/x-reader.meta.js
@@ -23,6 +23,9 @@
   const MEDIA_MODAL_ID = "xra-media-modal";
   const VIEW_TOGGLE_ID = "xra-view-toggle";
   const VIEW_MODE_KEY = "xra-feed-view-mode";
+  const SWIPE_MIN_DISTANCE = 58;
+  const SWIPE_EDGE_GUARD = 24;
+  const SWIPE_MAX_DURATION = 800;
 
   const CONFIG = {
     fontSize: 12.5,
@@ -801,6 +804,46 @@
     renderViewModeButton(root, button); return button;
   };
 
+  const addListSwipeNavigation = root => {
+    let startX = 0;
+    let startY = 0;
+    let startTime = 0;
+    let tracking = false;
+    let suppressClickUntil = 0;
+    const isInteractiveTarget = target => target instanceof Element && Boolean(target.closest("button, a, input, textarea, select, [contenteditable='true']"));
+
+    root.addEventListener("touchstart", event => {
+      if (event.touches.length !== 1 || isInteractiveTarget(event.target)) { tracking = false; return; }
+      const touch = event.touches[0];
+      if (touch.clientX <= SWIPE_EDGE_GUARD || touch.clientX >= window.innerWidth - SWIPE_EDGE_GUARD) { tracking = false; return; }
+      startX = touch.clientX;
+      startY = touch.clientY;
+      startTime = Date.now();
+      tracking = true;
+    }, { passive: true });
+
+    root.addEventListener("touchend", event => {
+      if (!tracking || event.changedTouches.length !== 1) { tracking = false; return; }
+      tracking = false;
+      const touch = event.changedTouches[0];
+      const deltaX = touch.clientX - startX;
+      const deltaY = touch.clientY - startY;
+      if (Date.now() - startTime > SWIPE_MAX_DURATION || Math.abs(deltaX) < SWIPE_MIN_DISTANCE || Math.abs(deltaX) <= Math.abs(deltaY) * 1.25) return;
+      suppressClickUntil = Date.now() + 450;
+      const currentIndex = CONFIG.sections.findIndex(section => section.id === activeSectionId);
+      const nextIndex = deltaX < 0 ? currentIndex + 1 : currentIndex - 1;
+      const nextSection = CONFIG.sections[nextIndex];
+      if (nextSection) switchSection(nextSection.id);
+    }, { passive: true });
+
+    root.addEventListener("touchcancel", () => { tracking = false; }, { passive: true });
+    root.addEventListener("click", event => {
+      if (Date.now() > suppressClickUntil) return;
+      event.preventDefault();
+      event.stopPropagation();
+    }, true);
+  };
+
   const createRoot = () => {
     if (document.getElementById(ROOT_ID)) return;
     const root = document.createElement("div"); root.id = ROOT_ID; root.dataset.viewMode = getSavedViewMode();
@@ -823,6 +866,7 @@
 
     const viewModeButton = createViewModeButton(root);
     root.addEventListener("scroll", () => preloadNativeFeed(root), { passive: true });
+    addListSwipeNavigation(root);
     root.append(header, sections, viewModeButton, bookmarksList); document.body.appendChild(root);
     renderCurrentFeed(); setTimeout(renderCurrentFeed, 400); setTimeout(renderCurrentFeed, 1000); setTimeout(renderCurrentFeed, 1800);
   };
