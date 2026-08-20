@@ -1,13 +1,13 @@
 // ==UserScript==
 // @name         X Reader Accordion v7.0.4-step11-light
 // @namespace    local.x-reader-accordion
-// @version      7.0.4.13.1
-// @description  コンパクト・ゆったり表示と、左右スワイプのリスト切替に対応したX Readerです。
+// @version      7.0.4.13.2
+// @description  専用の起動画面、表示切替、左右スワイプに対応したX Readerです。
 // @match        https://x.com/*
 // @match        https://twitter.com/*
 // @updateURL    https://raw.githubusercontent.com/aya0no/x-reader/main/x-reader.meta.js
 // @downloadURL  https://raw.githubusercontent.com/aya0no/x-reader/main/x-reader.user.js
-// @run-at       document-idle
+// @run-at       document-start
 // @grant        none
 // ==/UserScript==
 
@@ -23,9 +23,69 @@
   const MEDIA_MODAL_ID = "xra-media-modal";
   const VIEW_TOGGLE_ID = "xra-view-toggle";
   const VIEW_MODE_KEY = "xra-feed-view-mode";
+  const BOOT_STYLE_ID = "xra-boot-style";
+  const BOOTING_CLASS = "xra-booting";
   const SWIPE_MIN_DISTANCE = 58;
   const SWIPE_EDGE_GUARD = 24;
   const SWIPE_MAX_DURATION = 800;
+
+  let bootRemovalTimer = null;
+  const shouldShowBootScreen = () => {
+    if (/\/status\/\d+/.test(location.pathname)) return true;
+    try { return localStorage.getItem("xra-enabled") !== "false"; } catch { return true; }
+  };
+  const hideBootScreen = () => {
+    clearTimeout(bootRemovalTimer);
+    bootRemovalTimer = null;
+    document.documentElement?.classList.remove(BOOTING_CLASS);
+    document.getElementById(BOOT_STYLE_ID)?.remove();
+  };
+  const showBootScreen = () => {
+    const documentElement = document.documentElement;
+    if (!documentElement || !shouldShowBootScreen()) return;
+    const style = document.createElement("style");
+    style.id = BOOT_STYLE_ID;
+    style.textContent = `
+      html.${BOOTING_CLASS}, html.${BOOTING_CLASS} body { background: #f7f7f5 !important; }
+      html.${BOOTING_CLASS} body { overflow: hidden !important; }
+      html.${BOOTING_CLASS} body > * { visibility: hidden !important; }
+      html.${BOOTING_CLASS}::before {
+        content: "X Reader";
+        position: fixed;
+        inset: 0;
+        z-index: 2147483646;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding-bottom: 26px;
+        background: #f7f7f5;
+        color: #171717;
+        font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Yu Gothic UI", "Yu Gothic", sans-serif;
+        font-size: 15px;
+        font-weight: 650;
+        letter-spacing: .12em;
+      }
+      html.${BOOTING_CLASS}::after {
+        content: "";
+        position: fixed;
+        top: calc(50% + 21px);
+        left: calc(50% - 38px);
+        z-index: 2147483647;
+        width: 76px;
+        height: 1px;
+        background: linear-gradient(90deg, #d8d8d4 0%, #d8d8d4 38%, #555 50%, #d8d8d4 62%, #d8d8d4 100%);
+        background-size: 220% 100%;
+        animation: xra-boot-line 1.05s ease-in-out infinite;
+      }
+      @keyframes xra-boot-line { from { background-position: 100% 0; } to { background-position: -100% 0; } }
+      @media (prefers-reduced-motion: reduce) { html.${BOOTING_CLASS}::after { animation: none; } }
+    `;
+    documentElement.classList.add(BOOTING_CLASS);
+    documentElement.appendChild(style);
+    bootRemovalTimer = setTimeout(hideBootScreen, 7000);
+  };
+
+  showBootScreen();
 
   const CONFIG = {
     fontSize: 12.5,
@@ -845,7 +905,7 @@
   };
 
   const createRoot = () => {
-    if (document.getElementById(ROOT_ID)) return;
+    if (document.getElementById(ROOT_ID)) { hideBootScreen(); return; }
     const root = document.createElement("div"); root.id = ROOT_ID; root.dataset.viewMode = getSavedViewMode();
     const header = document.createElement("header"); header.className = "xra-header";
     const tabs = document.createElement("nav"); tabs.className = "xra-tabs"; tabs.setAttribute("role", "tablist"); tabs.setAttribute("aria-label", "リストを切り替える");
@@ -869,6 +929,7 @@
     addListSwipeNavigation(root);
     root.append(header, sections, viewModeButton, bookmarksList); document.body.appendChild(root);
     renderCurrentFeed(); setTimeout(renderCurrentFeed, 400); setTimeout(renderCurrentFeed, 1000); setTimeout(renderCurrentFeed, 1800);
+    hideBootScreen();
   };
 
 
@@ -1251,6 +1312,7 @@
       syncDetailBookmarkButton(article);
     }
 
+    hideBootScreen();
     return root;
   };
 
@@ -1287,6 +1349,8 @@
     document.querySelector("article.xra-detail-main")?.classList.remove("xra-detail-main");
     if (localStorage.getItem("xra-enabled") !== "false" && !document.getElementById(ROOT_ID)) {
       enableReader();
+    } else if (!document.getElementById(ROOT_ID)) {
+      hideBootScreen();
     }
   };
 
