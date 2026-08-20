@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         X Reader Accordion v7.0.4-step11-light
 // @namespace    local.x-reader-accordion
-// @version      7.0.4.12.7
-// @description  ホーム、1、2、株、レシピを固定タブで切り替えるモノクロ軽量版です。
+// @version      7.0.4.13.0
+// @description  コンパクト表示と画像を大きく見せるゆったり表示を切り替えられるX Readerです。
 // @match        https://x.com/*
 // @match        https://twitter.com/*
 // @updateURL    https://raw.githubusercontent.com/aya0no/x-reader/main/x-reader.meta.js
@@ -21,6 +21,8 @@
   const DETAIL_ROOT_ID = "xra-detail-root";
   const BOOKMARKS_LIST_ID = "xra-bookmarks-list";
   const MEDIA_MODAL_ID = "xra-media-modal";
+  const VIEW_TOGGLE_ID = "xra-view-toggle";
+  const VIEW_MODE_KEY = "xra-feed-view-mode";
 
   const CONFIG = {
     fontSize: 12.5,
@@ -62,7 +64,9 @@
     .xra-handle { overflow: hidden; font-size: 11.5px; font-weight: 650; text-overflow: ellipsis; }
     .xra-time { flex: 0 0 auto; color: #777; font-size: 10.5px; }
     .xra-text { display: -webkit-box; overflow: hidden; font-size: ${CONFIG.fontSize}px; line-height: 1.45; white-space: pre-wrap; word-break: break-word; -webkit-box-orient: vertical; -webkit-line-clamp: 7; }
-    .xra-media { width: ${CONFIG.imageWidth}px; height: ${CONFIG.imageHeight}px; align-self: start; padding: 0; overflow: hidden; border: 1px solid #d5d5d2; border-radius: 8px; background: #eee; cursor: zoom-in; }
+    .xra-media-list { width: ${CONFIG.imageWidth}px; height: ${CONFIG.imageHeight}px; align-self: start; overflow: hidden; border-radius: 8px; background: #eee; }
+    .xra-media { display: none; width: 100%; height: 100%; padding: 0; overflow: hidden; border: 1px solid #d5d5d2; border-radius: 8px; background: #eee; cursor: zoom-in; }
+    .xra-media:first-child { display: block; }
     .xra-media img { display: block; width: 100%; height: 100%; object-fit: cover; ${CONFIG.monochrome ? "filter: grayscale(1);" : ""} }
     .xra-link-card { display: block; width: 100%; margin-top: 8px; padding: 7px 8px; overflow: hidden; border: 1px solid #d8d8d5; border-radius: 9px; background: #fafaf8; color: #171717; text-align: left; }
     .xra-link-site { overflow: hidden; color: #777; font-size: 9.5px; text-overflow: ellipsis; white-space: nowrap; }
@@ -72,8 +76,34 @@
     .xra-card.has-media .xra-card-bookmark { top: 12px; right: calc(${CONFIG.imageWidth}px + 22px); }
     .xra-card-bookmark svg { display: block; width: 13px; height: 13px; fill: currentColor; }
     .xra-card-bookmark[data-saved="true"] { border-color: #171717; background: #171717; color: #fff; }
+    .xra-card-footer { display: none; }
+    #${ROOT_ID}[data-view-mode="comfortable"] { background: #f3f3f1; }
+    #${ROOT_ID}[data-view-mode="comfortable"] .xra-list { padding: 8px 0 82px; }
+    #${ROOT_ID}[data-view-mode="comfortable"] .xra-card { display: block; margin: 0 0 8px; padding: 18px 20px 22px; border: 0; border-bottom: 1px solid #dcdcd9; border-radius: 0; }
+    #${ROOT_ID}[data-view-mode="comfortable"] .xra-main { padding-right: 40px; }
+    #${ROOT_ID}[data-view-mode="comfortable"] .xra-meta { min-height: 18px; margin-bottom: 11px; }
+    #${ROOT_ID}[data-view-mode="comfortable"] .xra-handle { font-size: 13.5px; }
+    #${ROOT_ID}[data-view-mode="comfortable"] .xra-time { display: none; }
+    #${ROOT_ID}[data-view-mode="comfortable"] .xra-text { display: block; overflow: visible; font-size: 15px; line-height: 1.65; -webkit-line-clamp: unset; }
+    #${ROOT_ID}[data-view-mode="comfortable"] .xra-link-card { margin-top: 13px; padding: 11px 12px; border-radius: 10px; }
+    #${ROOT_ID}[data-view-mode="comfortable"] .xra-link-site { font-size: 10.5px; }
+    #${ROOT_ID}[data-view-mode="comfortable"] .xra-link-title { margin-top: 3px; font-size: 14px; line-height: 1.45; }
+    #${ROOT_ID}[data-view-mode="comfortable"] .xra-link-summary { margin-top: 4px; font-size: 12px; line-height: 1.45; }
+    #${ROOT_ID}[data-view-mode="comfortable"] .xra-media-list { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); width: 100%; height: auto; margin-top: 15px; gap: 8px; overflow: visible; border-radius: 0; background: transparent; }
+    #${ROOT_ID}[data-view-mode="comfortable"] .xra-media-list[data-count="1"] { grid-template-columns: 1fr; }
+    #${ROOT_ID}[data-view-mode="comfortable"] .xra-media { display: block; width: 100%; height: auto; aspect-ratio: 1; border-radius: 10px; }
+    #${ROOT_ID}[data-view-mode="comfortable"] .xra-media-list[data-count="1"] .xra-media { aspect-ratio: 4/3; max-height: 440px; }
+    #${ROOT_ID}[data-view-mode="comfortable"] .xra-media-list[data-count="2"] .xra-media { aspect-ratio: 3/4; max-height: 460px; }
+    #${ROOT_ID}[data-view-mode="comfortable"] .xra-media img { filter: none; }
+    #${ROOT_ID}[data-view-mode="comfortable"] .xra-card-bookmark,
+    #${ROOT_ID}[data-view-mode="comfortable"] .xra-card.has-media .xra-card-bookmark { top: 15px; right: 18px; width: 34px; height: 34px; }
+    #${ROOT_ID}[data-view-mode="comfortable"] .xra-card-bookmark svg { width: 17px; height: 17px; }
+    #${ROOT_ID}[data-view-mode="comfortable"] .xra-card-footer { display: flex; flex-direction: column; align-items: flex-start; gap: 3px; margin-top: 13px; color: #666; }
+    .xra-card-like { font-size: 12px; line-height: 1.35; }
+    .xra-card-date { font-size: 11px; line-height: 1.35; }
     #${MEDIA_MODAL_ID} { position: fixed; inset: 0; z-index: 2147483647; display: flex; align-items: center; justify-content: center; padding: 44px 18px calc(44px + env(safe-area-inset-bottom, 0px)); background: rgba(0,0,0,.76); }
     #${MEDIA_MODAL_ID} img { display: block; max-width: 88vw; max-height: 72vh; border: 1px solid #777; border-radius: 10px; background: #222; object-fit: contain; ${CONFIG.monochrome ? "filter: grayscale(1);" : ""} }
+    #${MEDIA_MODAL_ID}[data-view-mode="comfortable"] img { filter: none; }
     .xra-media-close { position: absolute; top: calc(12px + env(safe-area-inset-top, 0px)); right: 14px; display: flex; align-items: center; justify-content: center; width: 36px; height: 36px; padding: 0; border: 1px solid #888; border-radius: 50%; background: rgba(20,20,20,.86); color: #fff; font-size: 24px; font-weight: 300; line-height: 1; }
     .xra-message { padding: 22px 14px; color: #777; font-size: 11px; line-height: 1.6; text-align: center; }
     #${TOGGLE_ID} {
@@ -112,6 +142,31 @@
     #${TOGGLE_ID}:active {
       transform: scale(.96);
     }
+
+    #${VIEW_TOGGLE_ID} {
+      position: fixed;
+      right: 116px;
+      bottom: calc(18px + env(safe-area-inset-bottom, 0px));
+      z-index: 2147483646;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 44px;
+      height: 44px;
+      padding: 0;
+      border: 1px solid #bdbdbd;
+      border-radius: 50%;
+      background: rgba(255,255,255,.96);
+      color: #222;
+      font-size: 0;
+      box-shadow: 0 4px 14px rgba(0,0,0,.14);
+      backdrop-filter: blur(12px);
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    #${VIEW_TOGGLE_ID} svg { display: block; width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 1.7; }
+    #${VIEW_TOGGLE_ID}[data-mode="comfortable"] { border-color: #171717; background: #171717; color: #fff; }
+    #${VIEW_TOGGLE_ID}:active { transform: scale(.96); }
 
     /* Step4: 判定済みのメイン投稿だけ見た目を変更 */
     html.xra-detail-page,
@@ -525,7 +580,8 @@
       transform: scale(.98);
     }
 
-    html.xra-detail-page #${BOOKMARKS_LIST_ID} {
+    html.xra-detail-page #${BOOKMARKS_LIST_ID},
+    html.xra-detail-page #${VIEW_TOGGLE_ID} {
       display: none !important;
     }
   `;
@@ -536,20 +592,23 @@
   const getTime = article => { const time = article.querySelector("time"); return time ? textOf(time) : ""; };
   const getText = article => { const tweetText = article.querySelector('[data-testid="tweetText"]'); return (tweetText?.innerText || tweetText?.textContent || "").trim(); };
   const getPostUrl = article => { const link = article.querySelector('a[href*="/status/"]'); if (!link) return ""; const href = link.getAttribute("href") || ""; return href.startsWith("http") ? href : `${location.origin}${href}`; };
-  const getMediaSource = article => {
+  const getMediaSources = article => {
     const candidates = [
       ...article.querySelectorAll('[data-testid="tweetPhoto"] img[src]'),
       ...article.querySelectorAll("video[poster]")
     ];
+    const sources = [];
     for (const media of candidates) {
       if (media.closest('[data-testid="Tweet-User-Avatar"], [data-testid="UserAvatar-Container"]')) continue;
       const source = media.tagName === "VIDEO" ? media.poster || media.getAttribute("poster") || "" : media.currentSrc || media.src || media.getAttribute("src") || "";
       if (!source || source.includes("profile_images") || source.includes("emoji")) continue;
-      return source;
+      sources.push(source);
     }
     const styledMedia = article.querySelector('[data-testid="videoPlayer"][style*="background-image"], [data-testid="videoPlayer"] [style*="background-image"]');
     const background = styledMedia?.style?.backgroundImage || "";
-    return background.match(/url\(["']?(.*?)["']?\)/)?.[1] || "";
+    const backgroundSource = background.match(/url\(["']?(.*?)["']?\)/)?.[1] || "";
+    if (backgroundSource) sources.push(backgroundSource);
+    return Array.from(new Set(sources));
   };
   const getLinkPreview = article => {
     const wrapper = article.querySelector('[data-testid="card.wrapper"]');
@@ -596,6 +655,7 @@
     if (!source) return;
     closeFeedMediaModal();
     const modal = document.createElement("div"); modal.id = MEDIA_MODAL_ID; modal.setAttribute("role", "dialog"); modal.setAttribute("aria-modal", "true"); modal.setAttribute("aria-label", "投稿画像");
+    modal.dataset.viewMode = document.getElementById(ROOT_ID)?.dataset.viewMode || "compact";
     const image = document.createElement("img"); image.src = getLargeMediaUrl(source); image.alt = "投稿画像";
     const close = document.createElement("button"); close.className = "xra-media-close"; close.type = "button"; close.setAttribute("aria-label", "閉じる"); close.textContent = "×";
     const onKeyDown = event => { if (event.key === "Escape") closeFeedMediaModal(); };
@@ -624,9 +684,9 @@
 
   const createCard = article => {
     if (isPromoted(article) || isReply(article)) return null;
-    const handle = getHandle(article), time = getTime(article), text = getText(article), postUrl = getPostUrl(article), mediaSrc = getMediaSource(article), linkPreview = getLinkPreview(article), key = getPostKey(article);
+    const handle = getHandle(article), time = getTime(article), text = getText(article), postUrl = getPostUrl(article), mediaSources = getMediaSources(article), linkPreview = getLinkPreview(article), key = getPostKey(article);
     if (!handle && !text && !linkPreview) return null;
-    const card = document.createElement("article"); card.className = `xra-card${mediaSrc ? " has-media" : ""}`; card.setAttribute(CARD_ATTR, key);
+    const card = document.createElement("article"); card.className = `xra-card${mediaSources.length ? " has-media" : ""}`; card.setAttribute(CARD_ATTR, key);
     const main = document.createElement("div"); main.className = "xra-main";
     const meta = document.createElement("div"); meta.className = "xra-meta";
     const handleEl = document.createElement("div"); handleEl.className = "xra-handle"; handleEl.textContent = handle.replace(/^@/, "");
@@ -643,11 +703,19 @@
       main.appendChild(linkCard);
     }
     card.appendChild(main);
-    if (mediaSrc) {
-      const media = document.createElement("button"); media.className = "xra-media"; media.type = "button"; media.setAttribute("aria-label", "画像を拡大");
-      const img = document.createElement("img"); img.src = mediaSrc; img.alt = ""; img.loading = "lazy"; img.decoding = "async";
-      media.appendChild(img); media.addEventListener("click", event => { event.stopPropagation(); openFeedMediaModal(mediaSrc); }); card.appendChild(media);
+    if (mediaSources.length) {
+      const mediaList = document.createElement("div"); mediaList.className = "xra-media-list"; mediaList.dataset.count = String(mediaSources.length);
+      mediaSources.forEach((source, index) => {
+        const media = document.createElement("button"); media.className = "xra-media"; media.type = "button"; media.setAttribute("aria-label", `画像${index + 1}を拡大`);
+        const img = document.createElement("img"); img.src = source; img.alt = ""; img.loading = "lazy"; img.decoding = "async";
+        media.appendChild(img); media.addEventListener("click", event => { event.stopPropagation(); openFeedMediaModal(source); }); mediaList.appendChild(media);
+      });
+      card.appendChild(mediaList);
     }
+    const footer = document.createElement("div"); footer.className = "xra-card-footer";
+    const like = document.createElement("div"); like.className = "xra-card-like"; like.textContent = `♡ ${getDetailLikeCount(article)}`;
+    const date = document.createElement("div"); date.className = "xra-card-date"; date.textContent = formatDetailDate(article) || time;
+    footer.append(like, date); card.appendChild(footer);
     if (findNativeBookmarkButton(article)) {
       const bookmark = document.createElement("button"); bookmark.className = "xra-card-bookmark"; bookmark.type = "button"; bookmark.appendChild(createFallbackBookmarkSvg());
       const syncBookmark = () => {
@@ -713,9 +781,29 @@
     content.appendChild(list); panel.appendChild(content); return { tab, panel };
   };
 
+  const getSavedViewMode = () => localStorage.getItem(VIEW_MODE_KEY) === "comfortable" ? "comfortable" : "compact";
+  const createViewModeSvg = targetMode => {
+    const namespace = "http://www.w3.org/2000/svg";
+    const svg = document.createElementNS(namespace, "svg"); svg.setAttribute("viewBox", "0 0 24 24"); svg.setAttribute("aria-hidden", "true");
+    const rows = targetMode === "comfortable" ? [[4,3,16,8],[4,13,16,8]] : [[4,3,16,4],[4,10,16,4],[4,17,16,4]];
+    rows.forEach(([x,y,width,height]) => { const rect = document.createElementNS(namespace, "rect"); rect.setAttribute("x", String(x)); rect.setAttribute("y", String(y)); rect.setAttribute("width", String(width)); rect.setAttribute("height", String(height)); rect.setAttribute("rx", "1.5"); svg.appendChild(rect); });
+    return svg;
+  };
+  const renderViewModeButton = (root, button) => {
+    const mode = root.dataset.viewMode === "comfortable" ? "comfortable" : "compact";
+    const targetMode = mode === "compact" ? "comfortable" : "compact";
+    const label = targetMode === "comfortable" ? "ゆったり表示に切り替える" : "コンパクト表示に切り替える";
+    button.dataset.mode = mode; button.setAttribute("aria-label", label); button.setAttribute("aria-pressed", String(mode === "comfortable")); button.title = targetMode === "comfortable" ? "ゆったり表示" : "コンパクト表示"; button.replaceChildren(createViewModeSvg(targetMode));
+  };
+  const createViewModeButton = root => {
+    const button = document.createElement("button"); button.id = VIEW_TOGGLE_ID; button.type = "button";
+    button.addEventListener("click", () => { const nextMode = root.dataset.viewMode === "comfortable" ? "compact" : "comfortable"; root.dataset.viewMode = nextMode; localStorage.setItem(VIEW_MODE_KEY, nextMode); renderViewModeButton(root, button); });
+    renderViewModeButton(root, button); return button;
+  };
+
   const createRoot = () => {
     if (document.getElementById(ROOT_ID)) return;
-    const root = document.createElement("div"); root.id = ROOT_ID;
+    const root = document.createElement("div"); root.id = ROOT_ID; root.dataset.viewMode = getSavedViewMode();
     const header = document.createElement("header"); header.className = "xra-header";
     const tabs = document.createElement("nav"); tabs.className = "xra-tabs"; tabs.setAttribute("role", "tablist"); tabs.setAttribute("aria-label", "リストを切り替える");
     const sections = document.createElement("main"); sections.className = "xra-sections";
@@ -733,8 +821,9 @@
       location.href = `${location.origin}/i/bookmarks`;
     });
 
+    const viewModeButton = createViewModeButton(root);
     root.addEventListener("scroll", () => preloadNativeFeed(root), { passive: true });
-    root.append(header, sections, bookmarksList); document.body.appendChild(root);
+    root.append(header, sections, viewModeButton, bookmarksList); document.body.appendChild(root);
     renderCurrentFeed(); setTimeout(renderCurrentFeed, 400); setTimeout(renderCurrentFeed, 1000); setTimeout(renderCurrentFeed, 1800);
   };
 
@@ -1166,10 +1255,10 @@
 
     return Boolean(
       element.matches?.(
-        `#${ROOT_ID}, #${DETAIL_ROOT_ID}, #${TOGGLE_ID}, #${BOOKMARKS_LIST_ID}, #${MEDIA_MODAL_ID}`
+        `#${ROOT_ID}, #${DETAIL_ROOT_ID}, #${TOGGLE_ID}, #${BOOKMARKS_LIST_ID}, #${MEDIA_MODAL_ID}, #${VIEW_TOGGLE_ID}`
       ) ||
       element.closest?.(
-        `#${ROOT_ID}, #${DETAIL_ROOT_ID}, #${TOGGLE_ID}, #${BOOKMARKS_LIST_ID}, #${MEDIA_MODAL_ID}`
+        `#${ROOT_ID}, #${DETAIL_ROOT_ID}, #${TOGGLE_ID}, #${BOOKMARKS_LIST_ID}, #${MEDIA_MODAL_ID}, #${VIEW_TOGGLE_ID}`
       )
     );
   };
