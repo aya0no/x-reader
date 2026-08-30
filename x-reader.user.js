@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         X Reader Accordion v7.0.4-step11-light
 // @namespace    local.x-reader-accordion
-// @version      7.0.4.13.4
-// @description  高速な専用起動画面、表示切替、左右スワイプ、投稿詳細の返信表示に対応したX Readerです。
+// @version      7.0.4.13.5
+// @description  高速な専用起動画面、表示切替、左右スワイプ、投稿詳細の返信・引用表示に対応したX Readerです。
 // @match        https://x.com/*
 // @match        https://twitter.com/*
 // @updateURL    https://raw.githubusercontent.com/aya0no/x-reader/main/x-reader.meta.js
@@ -494,6 +494,83 @@
       letter-spacing: normal;
       white-space: pre-wrap;
       word-break: break-word;
+    }
+
+    .xra-detail-quote-slot:empty {
+      display: none;
+    }
+
+    .xra-detail-quote {
+      display: block;
+      width: 100%;
+      margin-top: 12px;
+      padding: 11px 12px;
+      overflow: hidden;
+      border: 1px solid #d3d3cf;
+      border-radius: 10px;
+      background: #fff;
+      color: #171717;
+      text-align: left;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    .xra-detail-quote:active {
+      background: #f3f3f1;
+    }
+
+    .xra-detail-quote-identity {
+      display: flex;
+      align-items: baseline;
+      min-width: 0;
+      gap: 6px;
+      margin-bottom: 6px;
+      white-space: nowrap;
+    }
+
+    .xra-detail-quote-name,
+    .xra-detail-quote-handle {
+      overflow: hidden;
+      font-size: 11px;
+      line-height: 1.3;
+      text-overflow: ellipsis;
+    }
+
+    .xra-detail-quote-name {
+      color: #222;
+      font-weight: 650;
+    }
+
+    .xra-detail-quote-handle {
+      color: #777;
+    }
+
+    .xra-detail-quote-text {
+      color: #252525;
+      font-size: 11.5px;
+      line-height: 1.5;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+
+    .xra-detail-quote-media {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 5px;
+      margin-top: 9px;
+    }
+
+    .xra-detail-quote-media[data-count="1"] {
+      grid-template-columns: 1fr;
+    }
+
+    .xra-detail-quote-media img {
+      display: block;
+      width: 100%;
+      max-height: 280px;
+      border: 1px solid #ddd;
+      border-radius: 7px;
+      object-fit: cover;
+      filter: none;
     }
 
     .xra-detail-media-list {
@@ -1237,14 +1314,144 @@
     };
   };
 
-  const getDetailMediaSources = article => {
+  const getStatusIdFromHref = href => {
+    const match = String(href || "").match(/\/status\/(\d+)/);
+    return match ? match[1] : "";
+  };
+
+  const getRawMediaSources = element => {
     const sources = Array.from(
-      article?.querySelectorAll('[data-testid="tweetPhoto"] img[src]') || []
+      element?.querySelectorAll('[data-testid="tweetPhoto"] img[src]') || []
     )
       .map(image => image.currentSrc || image.src || "")
       .filter(Boolean);
-
     return Array.from(new Set(sources));
+  };
+
+  const findQuotedPost = article => {
+    if (!article) return null;
+
+    const ownStatusId =
+      getStatusIdFromHref(article.querySelector('time')?.closest('a[href*="/status/"]')?.getAttribute("href")) ||
+      getCurrentStatusId();
+
+    const tweetTexts = Array.from(article.querySelectorAll('[data-testid="tweetText"]'));
+    const statusLinks = Array.from(article.querySelectorAll('a[href*="/status/"]'));
+
+    for (const link of statusLinks) {
+      const id = getStatusIdFromHref(link.getAttribute("href"));
+      const quotedText = link.querySelector('[data-testid="tweetText"]');
+      if (!id || id === ownStatusId || !quotedText) continue;
+      return { container: link, id, url: new URL(link.getAttribute("href"), location.origin).href, textElement: quotedText };
+    }
+
+    if (tweetTexts.length < 2) return null;
+    const quotedText = tweetTexts[tweetTexts.length - 1];
+    let container = quotedText.parentElement;
+
+    while (container && container !== article) {
+      const link = Array.from(container.querySelectorAll('a[href*="/status/"]')).find(item => {
+        const id = getStatusIdFromHref(item.getAttribute("href"));
+        return id && id !== ownStatusId;
+      });
+      if (link) {
+        const id = getStatusIdFromHref(link.getAttribute("href"));
+        return { container, id, url: new URL(link.getAttribute("href"), location.origin).href, textElement: quotedText };
+      }
+      container = container.parentElement;
+    }
+
+    return null;
+  };
+
+  const getDetailBodyText = article => {
+    const quote = findQuotedPost(article);
+    const text = Array.from(article?.querySelectorAll('[data-testid="tweetText"]') || [])
+      .find(element => !quote?.container.contains(element));
+    return (text?.innerText || "").trim();
+  };
+
+  const getDetailMediaSources = article => {
+    const quote = findQuotedPost(article);
+    const images = Array.from(
+      article?.querySelectorAll('[data-testid="tweetPhoto"] img[src]') || []
+    ).filter(image => !quote?.container.contains(image));
+    return Array.from(new Set(images.map(image => image.currentSrc || image.src || "").filter(Boolean)));
+  };
+
+  const getQuotedPostData = article => {
+    const quote = findQuotedPost(article);
+    if (!quote) return null;
+    const identity = getDetailIdentity(quote.container);
+    return {
+      id: quote.id,
+      url: quote.url,
+      name: identity.name,
+      handle: identity.handle,
+      text: (quote.textElement?.innerText || "").trim(),
+      mediaSources: getRawMediaSources(quote.container)
+    };
+  };
+
+  const createDetailQuote = article => {
+    const data = getQuotedPostData(article);
+    if (!data) return null;
+
+    const quote = document.createElement("div");
+    quote.className = "xra-detail-quote";
+    quote.setAttribute("role", "link");
+    quote.tabIndex = 0;
+    const openQuote = event => {
+      event.stopPropagation();
+      location.href = data.url;
+    };
+    quote.addEventListener("click", openQuote);
+    quote.addEventListener("keydown", event => {
+      if (event.key === "Enter" || event.key === " ") openQuote(event);
+    });
+
+    const identity = document.createElement("div");
+    identity.className = "xra-detail-quote-identity";
+
+    const name = document.createElement("div");
+    name.className = "xra-detail-quote-name";
+    name.textContent = data.name;
+
+    const handle = document.createElement("div");
+    handle.className = "xra-detail-quote-handle";
+    handle.textContent = data.handle;
+
+    identity.append(name, handle);
+    quote.appendChild(identity);
+
+    if (data.text) {
+      const body = document.createElement("div");
+      body.className = "xra-detail-quote-text";
+      body.textContent = data.text;
+      quote.appendChild(body);
+    }
+
+    if (data.mediaSources.length) {
+      const media = document.createElement("div");
+      media.className = "xra-detail-quote-media";
+      media.dataset.count = String(data.mediaSources.length);
+      data.mediaSources.forEach(source => {
+        const image = document.createElement("img");
+        image.src = source;
+        image.alt = "";
+        image.loading = "lazy";
+        media.appendChild(image);
+      });
+      quote.appendChild(media);
+    }
+
+    return quote;
+  };
+
+  const renderDetailQuote = (slot, article) => {
+    if (!slot) return;
+    const quote = createDetailQuote(article);
+    slot.replaceChildren(...(quote ? [quote] : []));
   };
 
 
@@ -1342,7 +1549,7 @@
     if (!status) return null;
 
     const identity = getDetailIdentity(article);
-    const bodyText = (article.querySelector('[data-testid="tweetText"]')?.innerText || "").trim();
+    const bodyText = getDetailBodyText(article);
     const mediaSources = getDetailMediaSources(article);
     const dateText = formatDetailDate(article);
 
@@ -1389,6 +1596,9 @@
       reply.appendChild(body);
     }
 
+    const quotedPost = createDetailQuote(article);
+    if (quotedPost) reply.appendChild(quotedPost);
+
     if (mediaSources.length) {
       const media = document.createElement("div");
       media.className = "xra-detail-reply-media";
@@ -1420,7 +1630,11 @@
 
     const articles = getDetailReplyArticles(mainArticle);
     const signature = articles
-      .map(article => getDetailArticleStatus(article)?.id || "")
+      .map(article => {
+        const statusId = getDetailArticleStatus(article)?.id || "";
+        const quoteId = getQuotedPostData(article)?.id || "";
+        return [statusId, quoteId].filter(Boolean).join(":");
+      })
       .filter(Boolean)
       .join(",");
 
@@ -1456,7 +1670,7 @@
   const createDetailReader = article => {
     const statusId = getCurrentStatusId();
     const identity = getDetailIdentity(article);
-    const bodyText = (article.querySelector('[data-testid="tweetText"]')?.innerText || "").trim();
+    const bodyText = getDetailBodyText(article);
     const mediaSources = getDetailMediaSources(article);
     const dateText = formatDetailDate(article);
     const likeText = getDetailLikeCount(article);
@@ -1556,6 +1770,12 @@
       sheet.append(profile);
 
       if (bodyText) sheet.append(body);
+
+      const quoteSlot = document.createElement("div");
+      quoteSlot.className = "xra-detail-quote-slot";
+      sheet.append(quoteSlot);
+      renderDetailQuote(quoteSlot, article);
+
       if (mediaSources.length) sheet.append(mediaList);
 
       sheet.append(footer);
@@ -1580,6 +1800,7 @@
       const date = root.querySelector(".xra-detail-date");
       if (like) like.textContent = `♡ ${likeText}`;
       if (date) date.textContent = dateText;
+      renderDetailQuote(root.querySelector(".xra-detail-quote-slot"), article);
       syncDetailBookmarkButton(article);
       renderDetailReplies(root, article);
     }
