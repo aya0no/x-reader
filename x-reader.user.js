@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         X Reader Accordion v7.0.4-step11-light
 // @namespace    local.x-reader-accordion
-// @version      7.0.4.13.3
-// @description  高速な専用起動画面、表示切替、左右スワイプに対応したX Readerです。
+// @version      7.0.4.13.4
+// @description  高速な専用起動画面、表示切替、左右スワイプ、投稿詳細の返信表示に対応したX Readerです。
 // @match        https://x.com/*
 // @match        https://twitter.com/*
 // @updateURL    https://raw.githubusercontent.com/aya0no/x-reader/main/x-reader.meta.js
@@ -108,6 +108,7 @@
   let activeSectionId = "following";
   let renderTimer = null;
   let preloadLocked = false;
+  let detailPreloadLocked = false;
 
   const css = `
     #${ROOT_ID} { position: fixed; inset: 0; z-index: 2147483000; overflow-y: auto; background: #f7f7f5; color: #171717; font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Yu Gothic UI", "Yu Gothic", sans-serif; -webkit-overflow-scrolling: touch; }
@@ -545,6 +546,121 @@
       color: #777;
       font-size: 10px;
       font-weight: 400;
+      line-height: 1.3;
+    }
+
+    .xra-detail-replies {
+      margin: 22px -12px 0;
+      border-top: 1px solid #d6d6d3;
+    }
+
+    .xra-detail-replies-title {
+      padding: 13px 14px 9px;
+      color: #555;
+      font-size: 11px;
+      font-weight: 650;
+      letter-spacing: .04em;
+    }
+
+    .xra-detail-reply {
+      display: block;
+      width: 100%;
+      padding: 13px 14px 15px;
+      border: 0;
+      border-top: 1px solid #dededb;
+      background: #fff;
+      color: #171717;
+      text-align: left;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    .xra-detail-reply:active {
+      background: #f1f1ef;
+    }
+
+    .xra-detail-reply-profile {
+      display: flex;
+      align-items: center;
+      min-width: 0;
+      margin-bottom: 8px;
+    }
+
+    .xra-detail-reply-avatar {
+      flex: 0 0 auto;
+      width: 28px;
+      height: 28px;
+      margin-right: 8px;
+      overflow: hidden;
+      border-radius: 50%;
+      background: #e6e6e3;
+    }
+
+    .xra-detail-reply-avatar img {
+      display: block;
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      filter: grayscale(1);
+    }
+
+    .xra-detail-reply-identity {
+      display: flex;
+      align-items: baseline;
+      min-width: 0;
+      gap: 6px;
+      white-space: nowrap;
+    }
+
+    .xra-detail-reply-name,
+    .xra-detail-reply-handle {
+      overflow: hidden;
+      font-size: 11px;
+      line-height: 1.3;
+      text-overflow: ellipsis;
+    }
+
+    .xra-detail-reply-name {
+      color: #222;
+      font-weight: 650;
+    }
+
+    .xra-detail-reply-handle {
+      color: #777;
+    }
+
+    .xra-detail-reply-text {
+      color: #202020;
+      font-size: 12px;
+      line-height: 1.55;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+
+    .xra-detail-reply-media {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 6px;
+      margin-top: 9px;
+    }
+
+    .xra-detail-reply-media[data-count="1"] {
+      grid-template-columns: 1fr;
+    }
+
+    .xra-detail-reply-media img {
+      display: block;
+      width: 100%;
+      max-height: 320px;
+      border: 1px solid #ddd;
+      border-radius: 8px;
+      object-fit: cover;
+      filter: none;
+    }
+
+    .xra-detail-reply-footer {
+      margin-top: 8px;
+      color: #888;
+      font-size: 10px;
       line-height: 1.3;
     }
 
@@ -1192,6 +1308,151 @@
     setTimeout(() => syncDetailBookmarkButton(article), 700);
   };
 
+  const getDetailArticleStatus = article => {
+    const timeLink = article?.querySelector('time')?.closest('a[href*="/status/"]');
+    const links = Array.from(article?.querySelectorAll('a[href*="/status/"]') || []);
+    const link = timeLink || links.find(item => /\/status\/\d+/.test(item.getAttribute("href") || ""));
+    const href = link?.getAttribute("href") || "";
+    const match = href.match(/\/status\/(\d+)/);
+    if (!match) return null;
+    return { id: match[1], url: new URL(href, location.origin).href };
+  };
+
+  const getDetailReplyArticles = mainArticle => {
+    const mainStatusId = getCurrentStatusId();
+    const articles = Array.from(document.querySelectorAll("article"));
+    const mainIndex = articles.indexOf(mainArticle);
+    const candidates = mainIndex >= 0 ? articles.slice(mainIndex + 1) : [];
+    const seen = new Set();
+
+    return candidates.filter(article => {
+      if (article.closest('[data-testid="placementTracking"]')) return false;
+      const status = getDetailArticleStatus(article);
+      if (!status || status.id === mainStatusId || seen.has(status.id)) return false;
+      const text = (article.querySelector('[data-testid="tweetText"]')?.innerText || "").trim();
+      const media = getDetailMediaSources(article);
+      if (!text && !media.length) return false;
+      seen.add(status.id);
+      return true;
+    });
+  };
+
+  const createDetailReply = article => {
+    const status = getDetailArticleStatus(article);
+    if (!status) return null;
+
+    const identity = getDetailIdentity(article);
+    const bodyText = (article.querySelector('[data-testid="tweetText"]')?.innerText || "").trim();
+    const mediaSources = getDetailMediaSources(article);
+    const dateText = formatDetailDate(article);
+
+    const reply = document.createElement("button");
+    reply.className = "xra-detail-reply";
+    reply.type = "button";
+    reply.dataset.statusId = status.id;
+    reply.addEventListener("click", () => {
+      location.href = status.url;
+    });
+
+    const profile = document.createElement("div");
+    profile.className = "xra-detail-reply-profile";
+
+    const avatar = document.createElement("div");
+    avatar.className = "xra-detail-reply-avatar";
+    if (identity.avatarSrc) {
+      const image = document.createElement("img");
+      image.src = identity.avatarSrc;
+      image.alt = "";
+      image.loading = "lazy";
+      avatar.appendChild(image);
+    }
+
+    const identityRow = document.createElement("div");
+    identityRow.className = "xra-detail-reply-identity";
+
+    const name = document.createElement("div");
+    name.className = "xra-detail-reply-name";
+    name.textContent = identity.name;
+
+    const handle = document.createElement("div");
+    handle.className = "xra-detail-reply-handle";
+    handle.textContent = identity.handle;
+
+    identityRow.append(name, handle);
+    profile.append(avatar, identityRow);
+    reply.appendChild(profile);
+
+    if (bodyText) {
+      const body = document.createElement("div");
+      body.className = "xra-detail-reply-text";
+      body.textContent = bodyText;
+      reply.appendChild(body);
+    }
+
+    if (mediaSources.length) {
+      const media = document.createElement("div");
+      media.className = "xra-detail-reply-media";
+      media.dataset.count = String(mediaSources.length);
+
+      mediaSources.forEach(source => {
+        const image = document.createElement("img");
+        image.src = source;
+        image.alt = "";
+        image.loading = "lazy";
+        media.appendChild(image);
+      });
+      reply.appendChild(media);
+    }
+
+    if (dateText) {
+      const footer = document.createElement("div");
+      footer.className = "xra-detail-reply-footer";
+      footer.textContent = dateText;
+      reply.appendChild(footer);
+    }
+
+    return reply;
+  };
+
+  const renderDetailReplies = (root, mainArticle) => {
+    const container = root?.querySelector(".xra-detail-replies");
+    if (!container) return;
+
+    const articles = getDetailReplyArticles(mainArticle);
+    const signature = articles
+      .map(article => getDetailArticleStatus(article)?.id || "")
+      .filter(Boolean)
+      .join(",");
+
+    if (container.dataset.signature === signature) return;
+    container.dataset.signature = signature;
+
+    const title = document.createElement("div");
+    title.className = "xra-detail-replies-title";
+    title.textContent = "返信";
+
+    const items = articles.map(createDetailReply).filter(Boolean);
+    if (items.length) {
+      container.replaceChildren(title, ...items);
+      return;
+    }
+
+    const loading = document.createElement("div");
+    loading.className = "xra-detail-loading";
+    loading.textContent = "返信を読み込み中";
+    container.replaceChildren(title, loading);
+  };
+
+  const preloadDetailReplies = root => {
+    if (detailPreloadLocked || root.scrollHeight - root.scrollTop - root.clientHeight > 360) return;
+    detailPreloadLocked = true;
+    window.scrollBy(0, Math.max(520, Math.round(window.innerHeight * .86)));
+    setTimeout(() => {
+      detailPreloadLocked = false;
+      simplifyDetailPage();
+    }, 700);
+  };
+
   const createDetailReader = article => {
     const statusId = getCurrentStatusId();
     const identity = getDetailIdentity(article);
@@ -1298,6 +1559,11 @@
       if (mediaSources.length) sheet.append(mediaList);
 
       sheet.append(footer);
+
+      const replies = document.createElement("section");
+      replies.className = "xra-detail-replies";
+      sheet.append(replies);
+
       const bookmark = document.createElement("button");
       bookmark.className = "xra-detail-bookmark";
       bookmark.type = "button";
@@ -1306,13 +1572,16 @@
 
       root.append(header, sheet, bookmark);
       document.body.appendChild(root);
+      root.addEventListener("scroll", () => preloadDetailReplies(root), { passive: true });
       syncDetailBookmarkButton(article);
+      renderDetailReplies(root, article);
     } else {
       const like = root.querySelector(".xra-detail-like");
       const date = root.querySelector(".xra-detail-date");
       if (like) like.textContent = `♡ ${likeText}`;
       if (date) date.textContent = dateText;
       syncDetailBookmarkButton(article);
+      renderDetailReplies(root, article);
     }
 
     hideBootScreen();
