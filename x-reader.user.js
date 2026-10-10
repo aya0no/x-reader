@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         X Reader Accordion v7.0.4-step11-light
 // @namespace    local.x-reader-accordion
-// @version      7.0.4.13.5
-// @description  高速な専用起動画面、表示切替、左右スワイプ、投稿詳細の返信・引用表示に対応したX Readerです。
+// @version      7.0.4.14.0
+// @description  読んでいた位置の復元、画像送り、返信・引用表示に対応した軽量なX Readerです。
 // @match        https://x.com/*
 // @match        https://twitter.com/*
 // @updateURL    https://raw.githubusercontent.com/aya0no/x-reader/main/x-reader.meta.js
@@ -31,11 +31,65 @@
   const SWIPE_MIN_DISTANCE = 58;
   const SWIPE_EDGE_GUARD = 24;
   const SWIPE_MAX_DURATION = 800;
+  const POSITION_KEY = "xra-reading-positions-v1";
+  const temporarySettings = new Map();
+  const readSetting = key => { if (temporarySettings.has(key)) return temporarySettings.get(key); try { return localStorage.getItem(key); } catch { return null; } };
+  const writeSetting = (key, value) => { temporarySettings.set(key, value); try { localStorage.setItem(key, value); } catch {} };
+  const readPositions = () => { try { const value = JSON.parse(sessionStorage.getItem(POSITION_KEY) || "{}"); return value && typeof value === "object" && !Array.isArray(value) ? value : {}; } catch { return {}; } };
+  let readingPositions = readPositions();
+  const storePosition = (path, value) => {
+    readingPositions = { ...readingPositions, ...readPositions() };
+    if (value) readingPositions[path] = value; else delete readingPositions[path];
+    readingPositions = Object.fromEntries(Object.entries(readingPositions).filter(([, entry]) => entry && Date.now() - entry.savedAt < 21600000).sort((a, b) => b[1].savedAt - a[1].savedAt).slice(0, 24));
+    try { sessionStorage.setItem(POSITION_KEY, JSON.stringify(readingPositions)); } catch {}
+  };
+  const readingItems = root => Array.from(root.querySelectorAll(root.id === ROOT_ID ? '.xra-section[data-open="true"] .xra-card' : '.xra-detail-reply'));
+  const readingKey = node => node?.getAttribute(CARD_ATTR) || node?.dataset.statusId || "";
+  const captureReadingPosition = root => {
+    const top = root.getBoundingClientRect().top + 48;
+    const anchor = readingItems(root).find(node => node.getBoundingClientRect().bottom > top);
+    return { top: root.scrollTop, nativeTop: window.scrollY, anchor: readingKey(anchor), offset: anchor ? anchor.getBoundingClientRect().top - top : 0, savedAt: Date.now() };
+  };
+  const saveReadingPosition = root => { if (root?.isConnected && root.xraPath && !root.xraRestore) storePosition(root.xraPath, captureReadingPosition(root)); };
+  const saveCurrentPosition = () => { saveReadingPosition(document.getElementById(ROOT_ID)); saveReadingPosition(document.getElementById(DETAIL_ROOT_ID)); };
+  const navigateReader = url => { saveCurrentPosition(); location.href = url; };
+  const tryRestorePosition = root => {
+    const pending = root?.xraRestore;
+    if (!pending || !root.isConnected || root.xraPath !== location.pathname) return;
+    const saved = pending.saved;
+    const anchor = readingItems(root).find(node => readingKey(node) === saved.anchor);
+    const enough = root.scrollHeight - root.clientHeight >= saved.top;
+    if (anchor || (!saved.anchor && enough) || Date.now() - pending.started > 8000) {
+      root.scrollTop = anchor ? root.scrollTop + anchor.getBoundingClientRect().top - root.getBoundingClientRect().top - 48 - saved.offset : Math.min(saved.top, root.scrollHeight - root.clientHeight);
+      root.xraRestore = null;
+      clearTimeout(root.xraRestoreTimer);
+      return;
+    }
+    if (Date.now() > pending.nextAttempt && pending.attempts < 8) {
+      pending.attempts += 1; pending.nextAttempt = Date.now() + 750;
+      window.scrollBy(0, Math.max(480, window.innerHeight * .8));
+    }
+    clearTimeout(root.xraRestoreTimer);
+    root.xraRestoreTimer = setTimeout(() => tryRestorePosition(root), 400);
+  };
+  const trackReadingPosition = root => {
+    root.xraPath = location.pathname;
+    const saved = readingPositions[root.xraPath];
+    if (saved && Number.isFinite(saved.top) && saved.top > 20 && Date.now() - saved.savedAt < 21600000) {
+      root.xraRestore = { saved, started: Date.now(), nextAttempt: Date.now() + 750, attempts: 0 };
+      window.scrollTo(0, Number.isFinite(saved.nativeTop) ? saved.nativeTop : 0);
+    }
+    const cancelRestore = () => { root.xraRestore = null; clearTimeout(root.xraRestoreTimer); };
+    root.addEventListener("touchstart", cancelRestore, { passive: true });
+    root.addEventListener("wheel", cancelRestore, { passive: true });
+    root.addEventListener("keydown", event => { if (["ArrowDown", "ArrowUp", "PageDown", "PageUp", "Home", "End"].includes(event.key)) cancelRestore(); });
+    root.addEventListener("scroll", () => { clearTimeout(root.xraSaveTimer); root.xraSaveTimer = setTimeout(() => saveReadingPosition(root), 200); }, { passive: true });
+  };
 
   let bootRemovalTimer = null;
   const shouldShowBootScreen = () => {
     if (/\/status\/\d+/.test(location.pathname)) return true;
-    try { return localStorage.getItem("xra-enabled") !== "false"; } catch { return true; }
+    return readSetting("xra-enabled") !== "false";
   };
   const hideBootScreen = () => {
     clearTimeout(bootRemovalTimer);
@@ -109,6 +163,7 @@
   let renderTimer = null;
   let preloadLocked = false;
   let detailPreloadLocked = false;
+  let detailState = null;
 
   const css = `
     #${ROOT_ID} { position: fixed; inset: 0; z-index: 2147483000; overflow-y: auto; background: #f7f7f5; color: #171717; font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Yu Gothic UI", "Yu Gothic", sans-serif; -webkit-overflow-scrolling: touch; }
@@ -168,10 +223,18 @@
     #${ROOT_ID}[data-view-mode="comfortable"] .xra-card-footer { display: flex; flex-direction: column; align-items: flex-start; gap: 3px; margin-top: 13px; color: #666; }
     .xra-card-like { font-size: 12px; line-height: 1.35; }
     .xra-card-date { font-size: 11px; line-height: 1.35; }
-    #${MEDIA_MODAL_ID} { position: fixed; inset: 0; z-index: 2147483647; display: flex; align-items: center; justify-content: center; padding: 44px 18px calc(44px + env(safe-area-inset-bottom, 0px)); background: rgba(0,0,0,.76); }
+    #${MEDIA_MODAL_ID} { position: fixed; inset: 0; z-index: 2147483647; box-sizing: border-box; display: flex; align-items: center; justify-content: center; padding: 44px 18px calc(44px + env(safe-area-inset-bottom, 0px)); background: rgba(0,0,0,.76); }
     #${MEDIA_MODAL_ID} img { display: block; max-width: 88vw; max-height: 72vh; border: 1px solid #777; border-radius: 10px; background: #222; object-fit: contain; ${CONFIG.monochrome ? "filter: grayscale(1);" : ""} }
     #${MEDIA_MODAL_ID}[data-view-mode="comfortable"] img { filter: none; }
     .xra-media-close { position: absolute; top: calc(12px + env(safe-area-inset-top, 0px)); right: 14px; display: flex; align-items: center; justify-content: center; width: 36px; height: 36px; padding: 0; border: 1px solid #888; border-radius: 50%; background: rgba(20,20,20,.86); color: #fff; font-size: 24px; font-weight: 300; line-height: 1; }
+    .xra-media-controls { position: absolute; bottom: calc(20px + env(safe-area-inset-bottom, 0px)); display: flex; gap: 24px; align-items: center; color: #fff; font-size: 12px; }
+    .xra-media-controls button { width: 44px; height: 40px; border: 1px solid #888; border-radius: 20px; background: #222; color: #fff; font-size: 20px; }
+    .xra-media-controls button:disabled { opacity: .3; }
+    .xra-detail-replies-load { display: block; margin: 10px auto; padding: 10px 16px; border: 1px solid #d3d3cf; border-radius: 18px; background: #fff; color: #555; font-size: 11px; }
+    .xra-detail-replies-load:disabled { opacity: .6; }
+    .xra-detail-body a, .xra-detail-reply-text a { color: inherit; text-decoration: underline; text-underline-offset: 2px; }
+    .xra-detail-media, .xra-detail-reply-media img, .xra-detail-quote-media img { cursor: zoom-in; }
+    .xra-detail-reply { cursor: pointer; }
     .xra-message { padding: 22px 14px; color: #777; font-size: 11px; line-height: 1.6; text-align: center; }
     #${TOGGLE_ID} {
       position: fixed;
@@ -392,6 +455,7 @@
         "Yu Gothic UI", "Yu Gothic", sans-serif !important;
       font-style: normal !important;
     }
+    #${DETAIL_ROOT_ID} [hidden] { display: none !important; }
 
     .xra-detail-header {
       position: sticky;
@@ -850,7 +914,7 @@
   const getHandle = article => { const userName = article.querySelector('[data-testid="User-Name"]'); if (!userName) return ""; return Array.from(userName.querySelectorAll("span")).map(textOf).find(text => text.startsWith("@")) || ""; };
   const getTime = article => { const time = article.querySelector("time"); return time ? textOf(time) : ""; };
   const getText = article => { const tweetText = article.querySelector('[data-testid="tweetText"]'); return (tweetText?.innerText || tweetText?.textContent || "").trim(); };
-  const getPostUrl = article => { const link = article.querySelector('a[href*="/status/"]'); if (!link) return ""; const href = link.getAttribute("href") || ""; return href.startsWith("http") ? href : `${location.origin}${href}`; };
+  const getPostUrl = article => getDetailArticleStatus(article)?.url || "";
   const getMediaSources = article => {
     const candidates = [
       ...article.querySelectorAll('[data-testid="tweetPhoto"] img[src]'),
@@ -910,29 +974,47 @@
     modal.xraCleanup?.();
     modal.remove();
   };
-  const openFeedMediaModal = source => {
-    if (!source) return;
+  const openFeedMediaModal = (sources, startIndex = 0, viewMode) => {
+    const items = (Array.isArray(sources) ? sources : [sources]).filter(Boolean);
+    if (!items.length) return;
     closeFeedMediaModal();
+    const opener = document.activeElement;
+    let index = Math.max(0, Math.min(startIndex, items.length - 1));
+    let gesture = null;
+    let ignoreClickUntil = 0;
     const modal = document.createElement("div"); modal.id = MEDIA_MODAL_ID; modal.setAttribute("role", "dialog"); modal.setAttribute("aria-modal", "true"); modal.setAttribute("aria-label", "投稿画像");
-    modal.dataset.viewMode = document.getElementById(ROOT_ID)?.dataset.viewMode || "compact";
-    const image = document.createElement("img"); image.src = getLargeMediaUrl(source); image.alt = "投稿画像";
+    modal.dataset.viewMode = viewMode || document.getElementById(ROOT_ID)?.dataset.viewMode || "comfortable";
+    const image = document.createElement("img"); image.alt = "投稿画像";
     const close = document.createElement("button"); close.className = "xra-media-close"; close.type = "button"; close.setAttribute("aria-label", "閉じる"); close.textContent = "×";
-    const onKeyDown = event => { if (event.key === "Escape") closeFeedMediaModal(); };
-    modal.xraCleanup = () => document.removeEventListener("keydown", onKeyDown);
-    modal.addEventListener("click", event => { if (event.target === modal) closeFeedMediaModal(); });
+    const controls = document.createElement("div"); controls.className = "xra-media-controls";
+    const previous = document.createElement("button"); previous.type = "button"; previous.textContent = "‹"; previous.setAttribute("aria-label", "前の画像");
+    const next = document.createElement("button"); next.type = "button"; next.textContent = "›"; next.setAttribute("aria-label", "次の画像");
+    const count = document.createElement("span"); count.setAttribute("aria-live", "polite");
+    const display = () => { image.src = getLargeMediaUrl(items[index]); image.alt = `投稿画像${index + 1}`; previous.disabled = index === 0; next.disabled = index === items.length - 1; count.textContent = `${index + 1} / ${items.length}`; };
+    const move = delta => { index = Math.max(0, Math.min(items.length - 1, index + delta)); display(); };
+    previous.addEventListener("click", () => move(-1)); next.addEventListener("click", () => move(1));
+    const onKeyDown = event => {
+      if (event.key === "Escape") { event.preventDefault(); closeFeedMediaModal(); }
+      if (event.key === "ArrowLeft" || event.key === "ArrowRight") { event.preventDefault(); move(event.key === "ArrowLeft" ? -1 : 1); }
+      if (event.key === "Tab") { const buttons = Array.from(modal.querySelectorAll("button:not(:disabled)")); const current = buttons.indexOf(document.activeElement); event.preventDefault(); buttons[(current + (event.shiftKey ? -1 : 1) + buttons.length) % buttons.length]?.focus(); }
+    };
+    modal.xraCleanup = () => { document.removeEventListener("keydown", onKeyDown); if (opener?.isConnected) opener.focus({ preventScroll: true }); };
+    modal.addEventListener("touchstart", event => { gesture = event.touches.length === 1 ? { x: event.touches[0].clientX, y: event.touches[0].clientY, time: Date.now() } : null; }, { passive: true });
+    modal.addEventListener("touchmove", event => { if (event.touches.length !== 1) gesture = null; }, { passive: true });
+    modal.addEventListener("touchend", event => { if (!gesture || event.changedTouches.length !== 1) return; const dx = event.changedTouches[0].clientX - gesture.x, dy = event.changedTouches[0].clientY - gesture.y; if (Date.now() - gesture.time < 800 && Math.abs(dx) > 58 && Math.abs(dx) > Math.abs(dy) * 1.5) { move(dx < 0 ? 1 : -1); ignoreClickUntil = Date.now() + 400; } gesture = null; }, { passive: true });
+    modal.addEventListener("touchcancel", () => { gesture = null; }, { passive: true });
+    modal.addEventListener("click", event => { if (event.target === modal && Date.now() > ignoreClickUntil) closeFeedMediaModal(); });
     close.addEventListener("click", closeFeedMediaModal);
     document.addEventListener("keydown", onKeyDown);
-    modal.append(image, close); document.body.appendChild(modal);
+    display(); controls.append(previous, count, next); modal.append(image, close); if (items.length > 1) modal.append(controls); document.body.appendChild(modal); close.focus({ preventScroll: true });
   };
   const isPromoted = article => {
-    const text = article.innerText || "";
-    return ["プロモーション", "Promoted", "広告", "おすすめ", "Who to follow", "おすすめユーザー"]
-      .some(word => text.includes(word));
+    return Boolean(article.closest('[data-testid="placementTracking"]') || article.querySelector('[data-testid="promotedIndicator"]'));
   };
   const isReply = article => {
-    if ((article.innerText||"").includes("返信先")) return true;
-    if (article.querySelector('[data-testid="socialContext"]')) return true;
-    return false;
+    const context = article.querySelector('[data-testid="socialContext"]')?.textContent || "";
+    if (/返信|replied/i.test(context)) return true;
+    return Array.from(article.querySelectorAll("span")).some(span => !span.closest('[data-testid="tweetText"]') && /^(返信先[:：]?|Replying to)$/.test(span.textContent.trim()));
   };
 
   const getPostKey = article => getPostUrl(article) || [getHandle(article), getTime(article), getText(article).slice(0,80), textOf(article.querySelector('[data-testid="card.wrapper"]')).slice(0,80)].join("|");
@@ -958,7 +1040,7 @@
       const title = document.createElement("div"); title.className = "xra-link-title"; title.textContent = linkPreview.title;
       linkCard.append(site, title);
       if (linkPreview.summary) { const summary = document.createElement("div"); summary.className = "xra-link-summary"; summary.textContent = linkPreview.summary; linkCard.appendChild(summary); }
-      linkCard.addEventListener("click", event => { event.stopPropagation(); location.href = linkPreview.url; });
+      linkCard.addEventListener("click", event => { event.stopPropagation(); navigateReader(linkPreview.url); });
       main.appendChild(linkCard);
     }
     card.appendChild(main);
@@ -967,7 +1049,7 @@
       mediaSources.forEach((source, index) => {
         const media = document.createElement("button"); media.className = "xra-media"; media.type = "button"; media.setAttribute("aria-label", `画像${index + 1}を拡大`);
         const img = document.createElement("img"); img.src = source; img.alt = ""; img.loading = "lazy"; img.decoding = "async";
-        media.appendChild(img); media.addEventListener("click", event => { event.stopPropagation(); openFeedMediaModal(source); }); mediaList.appendChild(media);
+        media.appendChild(img); media.addEventListener("click", event => { event.stopPropagation(); openFeedMediaModal(mediaSources, index); }); mediaList.appendChild(media);
       });
       card.appendChild(mediaList);
     }
@@ -993,8 +1075,8 @@
       });
       syncBookmark(); card.appendChild(bookmark);
     }
-    card.addEventListener("click", () => { if (postUrl) location.href = postUrl; });
-    if (postUrl) { card.tabIndex = 0; card.setAttribute("role", "link"); card.addEventListener("keydown", event => { if (event.target === card && (event.key === "Enter" || event.key === " ")) { event.preventDefault(); location.href = postUrl; } }); }
+    card.addEventListener("click", () => { if (postUrl) navigateReader(postUrl); });
+    if (postUrl) { card.tabIndex = 0; card.setAttribute("role", "link"); card.addEventListener("keydown", event => { if (event.target === card && (event.key === "Enter" || event.key === " ")) { event.preventDefault(); navigateReader(postUrl); } }); }
     return card;
   };
 
@@ -1009,10 +1091,11 @@
     document.querySelectorAll("article").forEach(article => { if (article.closest(`#${ROOT_ID}`)) return; const key = getPostKey(article); if (!key || existing.has(key)) return; const card = createCard(article); if (!card) return; list.appendChild(card); existing.add(key); added += 1; });
     if (!list.querySelector(".xra-card") && !list.querySelector(".xra-message")) list.innerHTML = '<div class="xra-message">投稿を読み込んでいます</div>';
     if (added > 0) list.querySelector(".xra-message")?.remove();
+    tryRestorePosition(document.getElementById(ROOT_ID));
   };
 
   const preloadNativeFeed = root => {
-    if (preloadLocked || root.scrollHeight - root.scrollTop - root.clientHeight > 320) return;
+    if (preloadLocked || root.xraRestore || !root.isConnected || root.scrollHeight - root.scrollTop - root.clientHeight > 320) return;
     preloadLocked = true;
     window.scrollBy(0, Math.max(480, Math.round(window.innerHeight * .82)));
     setTimeout(() => { preloadLocked = false; renderCurrentFeed(); }, 650);
@@ -1020,27 +1103,29 @@
 
   const switchSection = sectionId => {
     const section = CONFIG.sections.find(item => item.id === sectionId); if (!section) return;
-    activeSectionId = sectionId;
-    document.querySelectorAll(".xra-section").forEach(element => { element.dataset.open = String(element.dataset.sectionId === sectionId); });
-    document.querySelectorAll(".xra-section-tab").forEach(button => { const active = button.dataset.sectionId === sectionId; button.dataset.active = String(active); button.setAttribute("aria-selected", String(active)); });
-    const root = document.getElementById(ROOT_ID); if (root) root.scrollTop = 0;
-    if (!section.url) { renderCurrentFeed(); return; }
-    const target = new URL(section.url, location.origin), current = new URL(location.href);
-    if (current.pathname !== target.pathname) { location.href = section.url; return; }
-    renderCurrentFeed();
+    const root = document.getElementById(ROOT_ID);
+    const target = new URL(section.url, location.origin);
+    if (target.pathname !== location.pathname) { navigateReader(target.href); return; }
+    if (root?.scrollTop > 20) { root.xraRestore = null; root.scrollTo({ top: 0, behavior: "auto" }); saveReadingPosition(root); return; }
+    if (root) { root.xraRestore = null; root.scrollTop = 0; saveReadingPosition(root); }
+    window.scrollTo(0, 0);
+    storePosition(location.pathname, null);
+    if (root) root.xraPath = null;
+    location.reload();
+    return;
   };
 
   const createSection = section => {
     const panel = document.createElement("section"); panel.id = `xra-section-${section.id}`; panel.className = "xra-section"; panel.dataset.sectionId = section.id; panel.dataset.open = String(section.id === activeSectionId); panel.setAttribute("role", "tabpanel");
     const tab = document.createElement("button"); tab.className = "xra-section-tab"; tab.type = "button"; tab.dataset.sectionId = section.id; tab.dataset.active = String(section.id === activeSectionId); tab.setAttribute("role", "tab"); tab.setAttribute("aria-selected", String(section.id === activeSectionId)); tab.setAttribute("aria-controls", panel.id);
     const label = document.createElement("span"); label.textContent = section.label;
-    tab.appendChild(label); tab.addEventListener("click", () => switchSection(section.id));
+    tab.appendChild(label); tab.title = "表示中のタブを押すと先頭へ。先頭で押すと更新"; tab.addEventListener("click", () => switchSection(section.id));
     const content = document.createElement("div"); content.className = "xra-content";
     const list = document.createElement("div"); list.className = "xra-list";
     content.appendChild(list); panel.appendChild(content); return { tab, panel };
   };
 
-  const getSavedViewMode = () => localStorage.getItem(VIEW_MODE_KEY) === "comfortable" ? "comfortable" : "compact";
+  const getSavedViewMode = () => readSetting(VIEW_MODE_KEY) === "comfortable" ? "comfortable" : "compact";
   const createViewModeSvg = targetMode => {
     const namespace = "http://www.w3.org/2000/svg";
     const svg = document.createElementNS(namespace, "svg"); svg.setAttribute("viewBox", "0 0 24 24"); svg.setAttribute("aria-hidden", "true");
@@ -1056,7 +1141,7 @@
   };
   const createViewModeButton = root => {
     const button = document.createElement("button"); button.id = VIEW_TOGGLE_ID; button.type = "button";
-    button.addEventListener("click", () => { const nextMode = root.dataset.viewMode === "comfortable" ? "compact" : "comfortable"; root.dataset.viewMode = nextMode; localStorage.setItem(VIEW_MODE_KEY, nextMode); renderViewModeButton(root, button); });
+    button.addEventListener("click", () => { const position = captureReadingPosition(root); const nextMode = root.dataset.viewMode === "comfortable" ? "compact" : "comfortable"; root.dataset.viewMode = nextMode; writeSetting(VIEW_MODE_KEY, nextMode); renderViewModeButton(root, button); root.xraRestore = { saved: position, started: Date.now(), nextAttempt: Date.now() + 750, attempts: 0 }; tryRestorePosition(root); });
     renderViewModeButton(root, button); return button;
   };
 
@@ -1117,13 +1202,14 @@
     bookmarksList.appendChild(createFallbackBookmarkSvg());
 
     bookmarksList.addEventListener("click", () => {
-      location.href = `${location.origin}/i/bookmarks`;
+      navigateReader(`${location.origin}/i/bookmarks`);
     });
 
     const viewModeButton = createViewModeButton(root);
     root.addEventListener("scroll", () => preloadNativeFeed(root), { passive: true });
     addListSwipeNavigation(root);
     root.append(header, sections, viewModeButton, bookmarksList); document.body.appendChild(root);
+    trackReadingPosition(root);
     renderCurrentFeed(); setTimeout(renderCurrentFeed, 400); setTimeout(renderCurrentFeed, 1000); setTimeout(renderCurrentFeed, 1800);
     hideBootScreen();
   };
@@ -1216,8 +1302,8 @@
     }
   };
 
-  const enableReader = () => { localStorage.setItem("xra-enabled", "true"); if (isDetailPage()) { closeFeedMediaModal(); document.getElementById(ROOT_ID)?.remove(); renderToggleButton(); return; } createRoot(); renderToggleButton(); };
-  const disableReader = () => { localStorage.setItem("xra-enabled", "false"); closeFeedMediaModal(); document.getElementById(ROOT_ID)?.remove(); renderToggleButton(); };
+  const enableReader = () => { writeSetting("xra-enabled", "true"); if (isDetailPage()) { closeFeedMediaModal(); document.getElementById(ROOT_ID)?.remove(); renderToggleButton(); return; } createRoot(); renderToggleButton(); };
+  const disableReader = () => { saveCurrentPosition(); writeSetting("xra-enabled", "false"); closeFeedMediaModal(); document.getElementById(ROOT_ID)?.remove(); renderToggleButton(); };
   const addToggle = () => {
     let button = document.getElementById(TOGGLE_ID);
     if (!button) {
@@ -1246,12 +1332,7 @@
     const statusId = getCurrentStatusId();
     if (!statusId) return null;
 
-    return Array.from(document.querySelectorAll("article")).find(article =>
-      Array.from(article.querySelectorAll('a[href*="/status/"]')).some(link => {
-        const href = link.getAttribute("href") || "";
-        return href.includes(`/status/${statusId}`);
-      })
-    ) || null;
+    return Array.from(document.querySelectorAll("article")).find(article => !isOwnedUiNode(article) && getDetailArticleStatus(article)?.id === statusId) || null;
   };
 
   const markMainDetailArticle = () => {
@@ -1267,7 +1348,8 @@
 
 
   const formatDetailDate = article => {
-    const time = article?.querySelector("time");
+    const quote = findQuoteContainer(article);
+    const time = Array.from(article?.querySelectorAll("time") || []).find(element => !quote?.contains(element));
     const datetime = time?.getAttribute("datetime");
     if (!datetime) return (time?.textContent || "").trim();
 
@@ -1328,47 +1410,56 @@
     return Array.from(new Set(sources));
   };
 
-  const findQuotedPost = article => {
+  const findQuoteContainer = article => {
     if (!article) return null;
-
-    const ownStatusId =
-      getStatusIdFromHref(article.querySelector('time')?.closest('a[href*="/status/"]')?.getAttribute("href")) ||
-      getCurrentStatusId();
-
-    const tweetTexts = Array.from(article.querySelectorAll('[data-testid="tweetText"]'));
-    const statusLinks = Array.from(article.querySelectorAll('a[href*="/status/"]'));
-
-    for (const link of statusLinks) {
-      const id = getStatusIdFromHref(link.getAttribute("href"));
-      const quotedText = link.querySelector('[data-testid="tweetText"]');
-      if (!id || id === ownStatusId || !quotedText) continue;
-      return { container: link, id, url: new URL(link.getAttribute("href"), location.origin).href, textElement: quotedText };
+    const identities = Array.from(article.querySelectorAll('[data-testid="User-Name"]'));
+    const ownIdentity = identities[0];
+    const candidates = Array.from(article.querySelectorAll('[data-testid="quoteTweet"], [data-testid="quotedTweet"], div[role="link"], a[href*="/status/"]'));
+    const marked = candidates.find(node => !node.contains(ownIdentity) && !node.closest('[data-testid="tweetText"], [data-testid="card.wrapper"]') && node.querySelector('[data-testid="User-Name"]') && node.querySelector('[data-testid="tweetText"], [data-testid="tweetPhoto"], [data-testid="videoPlayer"]'));
+    if (marked) return marked;
+    let node = identities[1]?.parentElement;
+    while (node && node !== article && !node.contains(ownIdentity)) {
+      if (node.querySelector('[data-testid="tweetText"], [data-testid="tweetPhoto"], [data-testid="videoPlayer"]')) return node;
+      node = node.parentElement;
     }
-
-    if (tweetTexts.length < 2) return null;
-    const quotedText = tweetTexts[tweetTexts.length - 1];
-    let container = quotedText.parentElement;
-
-    while (container && container !== article) {
-      const link = Array.from(container.querySelectorAll('a[href*="/status/"]')).find(item => {
-        const id = getStatusIdFromHref(item.getAttribute("href"));
-        return id && id !== ownStatusId;
-      });
-      if (link) {
-        const id = getStatusIdFromHref(link.getAttribute("href"));
-        return { container, id, url: new URL(link.getAttribute("href"), location.origin).href, textElement: quotedText };
-      }
-      container = container.parentElement;
-    }
-
     return null;
+  };
+  const findQuotedPost = article => {
+    const container = findQuoteContainer(article);
+    if (!container) return null;
+    const link = container.matches('a[href*="/status/"]') ? container : container.querySelector('time')?.closest('a[href*="/status/"]') || container.querySelector('a[href*="/status/"]');
+    const href = link?.getAttribute("href");
+    return { container, id: getStatusIdFromHref(href), url: href ? new URL(href, location.origin).href : "", textElement: container.querySelector('[data-testid="tweetText"]') };
   };
 
   const getDetailBodyText = article => {
     const quote = findQuotedPost(article);
     const text = Array.from(article?.querySelectorAll('[data-testid="tweetText"]') || [])
       .find(element => !quote?.container.contains(element));
-    return (text?.innerText || "").trim();
+    return (text?.innerText || text?.textContent || "").trim();
+  };
+  const fillLinkedBody = (target, article) => {
+    const quote = findQuoteContainer(article);
+    const source = Array.from(article.querySelectorAll('[data-testid="tweetText"]')).find(node => !quote?.contains(node));
+    target.replaceChildren();
+    const append = (parent, node) => {
+      if (node.nodeType === Node.TEXT_NODE) { parent.appendChild(document.createTextNode(node.textContent)); return; }
+      if (node.nodeType !== Node.ELEMENT_NODE) return;
+      if (node.tagName === "BR") { parent.appendChild(document.createElement("br")); return; }
+      if (node.tagName === "IMG") { parent.appendChild(document.createTextNode(node.alt || "")); return; }
+      let output = parent;
+      if (node.tagName === "A") {
+        try { const url = new URL(node.getAttribute("href"), location.origin); if (/^https?:$/.test(url.protocol)) { output = document.createElement("a"); output.href = url.href; output.addEventListener("click", event => { event.stopPropagation(); saveCurrentPosition(); }); parent.appendChild(output); } } catch {}
+      }
+      node.childNodes.forEach(child => append(output, child));
+    };
+    source?.childNodes.forEach(node => append(target, node));
+  };
+  const enableDetailImage = (image, sources, index) => {
+    image.tabIndex = 0; image.setAttribute("role", "button"); image.setAttribute("aria-label", `画像${index + 1}を拡大`);
+    const open = event => { event.preventDefault(); event.stopPropagation(); openFeedMediaModal(sources, index, "comfortable"); };
+    image.addEventListener("click", open);
+    image.addEventListener("keydown", event => { if (event.key === "Enter" || event.key === " ") open(event); });
   };
 
   const getDetailMediaSources = article => {
@@ -1388,7 +1479,7 @@
       url: quote.url,
       name: identity.name,
       handle: identity.handle,
-      text: (quote.textElement?.innerText || "").trim(),
+      text: (quote.textElement?.innerText || quote.textElement?.textContent || "").trim(),
       mediaSources: getRawMediaSources(quote.container)
     };
   };
@@ -1399,15 +1490,15 @@
 
     const quote = document.createElement("div");
     quote.className = "xra-detail-quote";
-    quote.setAttribute("role", "link");
-    quote.tabIndex = 0;
+    if (data.url) { quote.setAttribute("role", "link"); quote.tabIndex = 0; }
     const openQuote = event => {
+      event.preventDefault();
       event.stopPropagation();
-      location.href = data.url;
+      if (data.url) navigateReader(data.url);
     };
     quote.addEventListener("click", openQuote);
     quote.addEventListener("keydown", event => {
-      if (event.key === "Enter" || event.key === " ") openQuote(event);
+      if (event.target === quote && (event.key === "Enter" || event.key === " ")) openQuote(event);
     });
 
     const identity = document.createElement("div");
@@ -1435,11 +1526,12 @@
       const media = document.createElement("div");
       media.className = "xra-detail-quote-media";
       media.dataset.count = String(data.mediaSources.length);
-      data.mediaSources.forEach(source => {
+      data.mediaSources.forEach((source, index) => {
         const image = document.createElement("img");
         image.src = source;
         image.alt = "";
         image.loading = "lazy";
+        enableDetailImage(image, data.mediaSources, index);
         media.appendChild(image);
       });
       quote.appendChild(media);
@@ -1450,6 +1542,9 @@
 
   const renderDetailQuote = (slot, article) => {
     if (!slot) return;
+    const signature = JSON.stringify(getQuotedPostData(article));
+    if (slot.dataset.signature === signature) return;
+    slot.dataset.signature = signature;
     const quote = createDetailQuote(article);
     slot.replaceChildren(...(quote ? [quote] : []));
   };
@@ -1516,9 +1611,9 @@
   };
 
   const getDetailArticleStatus = article => {
-    const timeLink = article?.querySelector('time')?.closest('a[href*="/status/"]');
-    const links = Array.from(article?.querySelectorAll('a[href*="/status/"]') || []);
-    const link = timeLink || links.find(item => /\/status\/\d+/.test(item.getAttribute("href") || ""));
+    const quote = findQuoteContainer(article);
+    const links = Array.from(article?.querySelectorAll('a[href*="/status/"]') || []).filter(node => !quote?.contains(node) && !node.closest('[data-testid="tweetText"], [data-testid="card.wrapper"]'));
+    const link = links.find(node => node.querySelector("time")) || links.find(item => /\/status\/\d+/.test(item.getAttribute("href") || ""));
     const href = link?.getAttribute("href") || "";
     const match = href.match(/\/status\/(\d+)/);
     if (!match) return null;
@@ -1527,18 +1622,22 @@
 
   const getDetailReplyArticles = mainArticle => {
     const mainStatusId = getCurrentStatusId();
-    const articles = Array.from(document.querySelectorAll("article"));
+    const scope = mainArticle?.closest('[data-testid="primaryColumn"]') || document.querySelector('[data-testid="primaryColumn"]') || document.querySelector("main") || document;
+    const articles = Array.from(scope.querySelectorAll("article")).filter(article => !isOwnedUiNode(article));
     const mainIndex = articles.indexOf(mainArticle);
-    const candidates = mainIndex >= 0 ? articles.slice(mainIndex + 1) : [];
+    const candidates = mainIndex >= 0 ? articles.slice(mainIndex + 1) : detailState?.id === mainStatusId ? articles : [];
+    const recommendations = Array.from(scope.querySelectorAll('h2, [role="heading"]')).find(node => /^(Discover more|もっと見つける|おすすめのポスト)$/.test(node.textContent.trim()));
     const seen = new Set();
 
     return candidates.filter(article => {
-      if (article.closest('[data-testid="placementTracking"]')) return false;
+      if (isPromoted(article)) return false;
+      if (recommendations && (recommendations.compareDocumentPosition(article) & Node.DOCUMENT_POSITION_FOLLOWING)) return false;
       const status = getDetailArticleStatus(article);
       if (!status || status.id === mainStatusId || seen.has(status.id)) return false;
+      if (detailState?.ancestors.has(status.id)) return false;
       const text = (article.querySelector('[data-testid="tweetText"]')?.innerText || "").trim();
       const media = getDetailMediaSources(article);
-      if (!text && !media.length) return false;
+      if (!text && !media.length && !findQuotedPost(article)) return false;
       seen.add(status.id);
       return true;
     });
@@ -1553,13 +1652,15 @@
     const mediaSources = getDetailMediaSources(article);
     const dateText = formatDetailDate(article);
 
-    const reply = document.createElement("button");
+    const reply = document.createElement("div");
     reply.className = "xra-detail-reply";
-    reply.type = "button";
+    reply.tabIndex = 0;
+    reply.setAttribute("role", "link");
     reply.dataset.statusId = status.id;
     reply.addEventListener("click", () => {
-      location.href = status.url;
+      navigateReader(status.url);
     });
+    reply.addEventListener("keydown", event => { if (event.target === reply && (event.key === "Enter" || event.key === " ")) { event.preventDefault(); navigateReader(status.url); } });
 
     const profile = document.createElement("div");
     profile.className = "xra-detail-reply-profile";
@@ -1592,7 +1693,7 @@
     if (bodyText) {
       const body = document.createElement("div");
       body.className = "xra-detail-reply-text";
-      body.textContent = bodyText;
+      fillLinkedBody(body, article);
       reply.appendChild(body);
     }
 
@@ -1604,11 +1705,12 @@
       media.className = "xra-detail-reply-media";
       media.dataset.count = String(mediaSources.length);
 
-      mediaSources.forEach(source => {
+      mediaSources.forEach((source, index) => {
         const image = document.createElement("img");
         image.src = source;
         image.alt = "";
         image.loading = "lazy";
+        enableDetailImage(image, mediaSources, index);
         media.appendChild(image);
       });
       reply.appendChild(media);
@@ -1626,45 +1728,50 @@
 
   const renderDetailReplies = (root, mainArticle) => {
     const container = root?.querySelector(".xra-detail-replies");
-    if (!container) return;
-
-    const articles = getDetailReplyArticles(mainArticle);
-    const signature = articles
-      .map(article => {
-        const statusId = getDetailArticleStatus(article)?.id || "";
-        const quoteId = getQuotedPostData(article)?.id || "";
-        return [statusId, quoteId].filter(Boolean).join(":");
-      })
-      .filter(Boolean)
-      .join(",");
-
-    if (container.dataset.signature === signature) return;
-    container.dataset.signature = signature;
-
-    const title = document.createElement("div");
-    title.className = "xra-detail-replies-title";
-    title.textContent = "返信";
-
-    const items = articles.map(createDetailReply).filter(Boolean);
-    if (items.length) {
-      container.replaceChildren(title, ...items);
-      return;
+    if (!container || !detailState || detailState.id !== root.dataset.statusId) return;
+    if (!container.querySelector(".xra-detail-reply-list")) {
+      const title = document.createElement("div"); title.className = "xra-detail-replies-title"; title.textContent = "返信";
+      const list = document.createElement("div"); list.className = "xra-detail-reply-list";
+      const message = document.createElement("div"); message.className = "xra-detail-loading"; message.setAttribute("role", "status");
+      const more = document.createElement("button"); more.type = "button"; more.className = "xra-detail-replies-load"; more.addEventListener("click", () => preloadDetailReplies(root, true));
+      container.append(title, list, message, more);
     }
-
-    const loading = document.createElement("div");
-    loading.className = "xra-detail-loading";
-    loading.textContent = "返信を読み込み中";
-    container.replaceChildren(title, loading);
+    const list = container.querySelector(".xra-detail-reply-list");
+    for (const article of getDetailReplyArticles(mainArticle)) {
+      const id = getDetailArticleStatus(article).id;
+      const signature = JSON.stringify([getDetailIdentity(article), getDetailBodyText(article), getDetailMediaSources(article), getQuotedPostData(article), formatDetailDate(article)]);
+      const previous = detailState.replies.get(id);
+      if (previous?.signature === signature) continue;
+      const node = createDetailReply(article);
+      if (!node) continue;
+      if (previous) previous.node.replaceWith(node); else list.appendChild(node);
+      detailState.replies.set(id, { signature, node });
+    }
+    const waiting = detailPreloadLocked || Date.now() - detailState.started < 1800;
+    const message = container.querySelector(".xra-detail-loading");
+    const messageText = detailState.replies.size ? "" : waiting ? "返信を読み込み中" : "表示できる返信がまだありません";
+    if (message.textContent !== messageText) message.textContent = messageText;
+    message.hidden = !messageText;
+    const more = container.querySelector(".xra-detail-replies-load");
+    more.disabled = detailPreloadLocked;
+    const label = detailPreloadLocked ? "読み込み中" : detailState.replies.size ? "続きを読み込む" : "再読み込み";
+    if (more.textContent !== label) more.textContent = label;
+    tryRestorePosition(root);
   };
 
-  const preloadDetailReplies = root => {
-    if (detailPreloadLocked || root.scrollHeight - root.scrollTop - root.clientHeight > 360) return;
+  const preloadDetailReplies = (root, force = false) => {
+    if (detailPreloadLocked || !root.isConnected || root.dataset.statusId !== getCurrentStatusId() || (!force && (root.xraRestore || root.scrollHeight - root.scrollTop - root.clientHeight > 360))) return;
+    const state = detailState;
+    if (!state || (!force && Date.now() - (state.lastLoad || 0) < 1200)) return;
+    state.lastLoad = Date.now();
     detailPreloadLocked = true;
+    renderDetailReplies(root, findMainDetailArticle());
     window.scrollBy(0, Math.max(520, Math.round(window.innerHeight * .86)));
     setTimeout(() => {
+      if (detailState !== state) return;
       detailPreloadLocked = false;
       simplifyDetailPage();
-    }, 700);
+    }, 1000);
   };
 
   const createDetailReader = article => {
@@ -1682,6 +1789,9 @@
     }
 
     if (!root) {
+      detailState = { id: statusId, started: Date.now(), replies: new Map(), ancestors: new Set() };
+      detailPreloadLocked = false;
+      for (const previous of Array.from(document.querySelectorAll("article"))) { if (previous === article) break; if (!isOwnedUiNode(previous)) { const id = getDetailArticleStatus(previous)?.id; if (id) detailState.ancestors.add(id); } }
       root = document.createElement("div");
       root.id = DETAIL_ROOT_ID;
       root.dataset.statusId = statusId;
@@ -1695,8 +1805,9 @@
       back.setAttribute("aria-label", "戻る");
       back.textContent = "←";
       back.addEventListener("click", () => {
+        saveCurrentPosition();
         if (history.length > 1) history.back();
-        else location.href = `${location.origin}/home`;
+        else navigateReader(`${location.origin}/home`);
       });
 
       const title = document.createElement("div");
@@ -1736,13 +1847,15 @@
 
       const body = document.createElement("div");
       body.className = "xra-detail-body";
-      body.textContent = bodyText;
+      fillLinkedBody(body, article);
+      body.hidden = !bodyText;
+      body.dataset.signature = bodyText;
 
       const mediaList = document.createElement("div");
       mediaList.className = "xra-detail-media-list";
       mediaList.dataset.count = String(mediaSources.length);
 
-      mediaSources.forEach(source => {
+      mediaSources.forEach((source, index) => {
         const media = document.createElement("div");
         media.className = "xra-detail-media";
 
@@ -1750,6 +1863,7 @@
         image.src = source;
         image.alt = "";
         image.loading = "eager";
+        enableDetailImage(image, mediaSources, index);
 
         media.appendChild(image);
         mediaList.appendChild(media);
@@ -1769,14 +1883,16 @@
       footer.append(like, date);
       sheet.append(profile);
 
-      if (bodyText) sheet.append(body);
+      sheet.append(body);
 
       const quoteSlot = document.createElement("div");
       quoteSlot.className = "xra-detail-quote-slot";
       sheet.append(quoteSlot);
       renderDetailQuote(quoteSlot, article);
 
-      if (mediaSources.length) sheet.append(mediaList);
+      mediaList.hidden = !mediaSources.length;
+      mediaList.dataset.signature = JSON.stringify(mediaSources);
+      sheet.append(mediaList);
 
       sheet.append(footer);
 
@@ -1788,18 +1904,27 @@
       bookmark.className = "xra-detail-bookmark";
       bookmark.type = "button";
       bookmark.setAttribute("aria-label", "ブックマークに追加");
-      bookmark.addEventListener("click", () => runDetailBookmark(article));
+      bookmark.addEventListener("click", () => runDetailBookmark(findMainDetailArticle()));
 
       root.append(header, sheet, bookmark);
       document.body.appendChild(root);
+      trackReadingPosition(root);
       root.addEventListener("scroll", () => preloadDetailReplies(root), { passive: true });
       syncDetailBookmarkButton(article);
       renderDetailReplies(root, article);
+      setTimeout(() => { if (root.isConnected && root.dataset.statusId === getCurrentStatusId()) simplifyDetailPage(); }, 2000);
     } else {
       const like = root.querySelector(".xra-detail-like");
       const date = root.querySelector(".xra-detail-date");
       if (like) like.textContent = `♡ ${likeText}`;
       if (date) date.textContent = dateText;
+      const body = root.querySelector(".xra-detail-body");
+      if (body.dataset.signature !== bodyText) { fillLinkedBody(body, article); body.dataset.signature = bodyText; body.hidden = !bodyText; }
+      const mediaList = root.querySelector(".xra-detail-media-list");
+      if (mediaList.dataset.signature !== JSON.stringify(mediaSources)) {
+        mediaList.dataset.signature = JSON.stringify(mediaSources); mediaList.dataset.count = String(mediaSources.length); mediaList.hidden = !mediaSources.length; mediaList.replaceChildren();
+        mediaSources.forEach((source, index) => { const media = document.createElement("div"); media.className = "xra-detail-media"; const image = document.createElement("img"); image.src = source; image.alt = ""; enableDetailImage(image, mediaSources, index); media.appendChild(image); mediaList.appendChild(media); });
+      }
       renderDetailQuote(root.querySelector(".xra-detail-quote-slot"), article);
       syncDetailBookmarkButton(article);
       renderDetailReplies(root, article);
@@ -1813,13 +1938,15 @@
     if (!isDetailPage()) return;
 
     const mainArticle = markMainDetailArticle();
-    if (!mainArticle) return;
-
-    createDetailReader(mainArticle);
+    if (mainArticle) createDetailReader(mainArticle);
+    else { const root = document.getElementById(DETAIL_ROOT_ID); if (root?.dataset.statusId === getCurrentStatusId()) { renderDetailReplies(root, null); } }
   };
 
   const clearDetailSimplification = () => {
+    saveReadingPosition(document.getElementById(DETAIL_ROOT_ID));
     document.getElementById(DETAIL_ROOT_ID)?.remove();
+    detailState = null;
+    detailPreloadLocked = false;
     document.querySelectorAll(".xra-detail-hidden").forEach(element => element.classList.remove("xra-detail-hidden"));
     document.querySelectorAll(".xra-native-action-group").forEach(element => element.classList.remove("xra-native-action-group"));
     document.querySelectorAll(".xra-native-meta-row").forEach(element => element.classList.remove("xra-native-meta-row"));
@@ -1831,6 +1958,9 @@
     document.documentElement.classList.toggle("xra-detail-page", detail);
 
     if (detail) {
+      saveReadingPosition(document.getElementById(ROOT_ID));
+      const previous = document.getElementById(DETAIL_ROOT_ID);
+      if (previous && previous.dataset.statusId !== getCurrentStatusId()) clearDetailSimplification();
       closeFeedMediaModal();
       document.getElementById(ROOT_ID)?.remove();
       renderToggleButton();
@@ -1839,8 +1969,10 @@
     }
 
     clearDetailSimplification();
+    const feed = document.getElementById(ROOT_ID);
+    if (feed && feed.xraPath !== location.pathname) { saveReadingPosition(feed); feed.remove(); }
     document.querySelector("article.xra-detail-main")?.classList.remove("xra-detail-main");
-    if (localStorage.getItem("xra-enabled") !== "false" && !document.getElementById(ROOT_ID)) {
+    if (readSetting("xra-enabled") !== "false" && !document.getElementById(ROOT_ID)) {
       enableReader();
     } else if (!document.getElementById(ROOT_ID)) {
       hideBootScreen();
@@ -1881,6 +2013,9 @@ const start = () => {
     detectInitialSection();
     addToggle();
     syncPageMode();
+    window.addEventListener("pagehide", saveCurrentPosition);
+    document.addEventListener("visibilitychange", () => { if (document.hidden) saveCurrentPosition(); });
+    window.addEventListener("pageshow", () => { lastUrl = location.href; detectInitialSection(); syncPageMode(); });
 
     const observer = new MutationObserver(mutations => {
       // 自分で追加したボタンや専用画面だけの変化では再処理しない。
@@ -1894,16 +2029,11 @@ const start = () => {
         syncPageMode();
       }
 
-      if (isDetailPage()) {
-        clearTimeout(renderTimer);
-        renderTimer = setTimeout(simplifyDetailPage, 140);
-      } else if (document.getElementById(ROOT_ID)) {
-        clearTimeout(renderTimer);
-        renderTimer = setTimeout(renderCurrentFeed, 160);
-      }
+      if (renderTimer) return;
+      renderTimer = setTimeout(() => { renderTimer = null; if (isDetailPage()) simplifyDetailPage(); else if (document.getElementById(ROOT_ID)) renderCurrentFeed(); }, 160);
     });
 
-    observer.observe(document.documentElement, { childList: true, subtree: true });
+    observer.observe(document.documentElement, { childList: true, characterData: true, subtree: true });
 
     // 以前は500msごとに画面全体を再判定していたが、
     // 軽量版ではURLが変わった時だけ安全確認する。
@@ -1917,3 +2047,4 @@ const start = () => {
 
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", start, { once: true }); else start();
 })();
+
