@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         X Reader Accordion v7.0.4-step11-light
 // @namespace    local.x-reader-accordion
-// @version      7.0.4.14.0
-// @description  読んでいた位置の復元、画像送り、返信・引用表示に対応した軽量なX Readerです。
+// @version      7.0.4.14.1
+// @description  検索、閲覧位置の復元、画像送り、返信・引用表示に対応した軽量なX Readerです。
 // @match        https://x.com/*
 // @match        https://twitter.com/*
 // @updateURL    https://raw.githubusercontent.com/aya0no/x-reader/main/x-reader.meta.js
@@ -32,9 +32,17 @@
   const SWIPE_EDGE_GUARD = 24;
   const SWIPE_MAX_DURATION = 800;
   const POSITION_KEY = "xra-reading-positions-v1";
+  const SEARCH_HISTORY_KEY = "xra-search-history-v1";
   const temporarySettings = new Map();
   const readSetting = key => { if (temporarySettings.has(key)) return temporarySettings.get(key); try { return localStorage.getItem(key); } catch { return null; } };
   const writeSetting = (key, value) => { temporarySettings.set(key, value); try { localStorage.setItem(key, value); } catch {} };
+  const isSearchPage = () => location.pathname === "/search" || location.pathname.startsWith("/explore");
+  const currentSearchQuery = () => isSearchPage() ? new URLSearchParams(location.search).get("q")?.trim() || "" : "";
+  const currentSearchMode = () => { if (!currentSearchQuery()) return "live"; const mode = new URLSearchParams(location.search).get("f"); return mode === "media" ? "media" : mode === "live" ? "live" : "top"; };
+  const currentPageKey = () => isSearchPage() ? `/search?q=${encodeURIComponent(currentSearchQuery())}&f=${currentSearchMode()}` : location.pathname;
+  const readSearchHistory = () => { try { const value = JSON.parse(readSetting(SEARCH_HISTORY_KEY) || "[]"); return Array.isArray(value) ? value.filter(item => typeof item === "string" && item.trim()).slice(0, 8) : []; } catch { return []; } };
+  const saveSearchQuery = query => { const value = query.trim(); if (!value) return; writeSetting(SEARCH_HISTORY_KEY, JSON.stringify([value, ...readSearchHistory().filter(item => item !== value)].slice(0, 8))); };
+  const searchUrl = (query, mode = "live") => { const value = query.trim(); if (!value) return `${location.origin}/explore`; const params = new URLSearchParams({ q: value, src: "typed_query" }); if (mode !== "top") params.set("f", mode); return `${location.origin}/search?${params.toString()}`; };
   const readPositions = () => { try { const value = JSON.parse(sessionStorage.getItem(POSITION_KEY) || "{}"); return value && typeof value === "object" && !Array.isArray(value) ? value : {}; } catch { return {}; } };
   let readingPositions = readPositions();
   const storePosition = (path, value) => {
@@ -55,7 +63,7 @@
   const navigateReader = url => { saveCurrentPosition(); location.href = url; };
   const tryRestorePosition = root => {
     const pending = root?.xraRestore;
-    if (!pending || !root.isConnected || root.xraPath !== location.pathname) return;
+    if (!pending || !root.isConnected || root.xraPath !== currentPageKey()) return;
     const saved = pending.saved;
     const anchor = readingItems(root).find(node => readingKey(node) === saved.anchor);
     const enough = root.scrollHeight - root.clientHeight >= saved.top;
@@ -73,7 +81,7 @@
     root.xraRestoreTimer = setTimeout(() => tryRestorePosition(root), 400);
   };
   const trackReadingPosition = root => {
-    root.xraPath = location.pathname;
+    root.xraPath = currentPageKey();
     const saved = readingPositions[root.xraPath];
     if (saved && Number.isFinite(saved.top) && saved.top > 20 && Date.now() - saved.savedAt < 21600000) {
       root.xraRestore = { saved, started: Date.now(), nextAttempt: Date.now() + 750, attempts: 0 };
@@ -155,7 +163,8 @@
       { id: "list1", label: "1", url: "https://x.com/i/lists/2082771236799840538" },
       { id: "list2", label: "2", url: "https://x.com/i/lists/962319313385308166" },
       { id: "stocks", label: "株", url: "https://x.com/i/lists/1581596744466321408" },
-      { id: "recipes", label: "レシピ", url: "https://x.com/i/lists/1718964496667156737" }
+      { id: "recipes", label: "レシピ", url: "https://x.com/i/lists/1718964496667156737" },
+      { id: "search", label: "検索", url: "https://x.com/explore" }
     ]
   };
 
@@ -178,6 +187,21 @@
     .xra-section { display: none; }
     .xra-section[data-open="true"] { display: block; }
     .xra-content { display: block; }
+    .xra-search-tools { position: sticky; top: 46px; z-index: 12; padding: 10px 10px 8px; border-bottom: 1px solid #dededb; background: rgba(247,247,245,.97); backdrop-filter: blur(12px); }
+    .xra-search-form { display: flex; gap: 7px; }
+    .xra-search-input { min-width: 0; flex: 1; height: 36px; padding: 0 12px; border: 1px solid #cfcfcb; border-radius: 18px; outline: none; background: #fff; color: #171717; font: inherit; font-size: 13px; }
+    .xra-search-input:focus { border-color: #666; }
+    .xra-search-submit { flex: 0 0 auto; height: 36px; padding: 0 15px; border: 0; border-radius: 18px; background: #171717; color: #fff; font-size: 12px; font-weight: 650; }
+    .xra-search-modes { display: flex; gap: 6px; margin-top: 8px; }
+    .xra-search-mode { min-height: 29px; padding: 0 11px; border: 1px solid #cececa; border-radius: 15px; background: #fff; color: #555; font-size: 11px; }
+    .xra-search-mode[data-active="true"] { border-color: #171717; background: #171717; color: #fff; }
+    .xra-search-groups { padding-top: 10px; }
+    .xra-search-group + .xra-search-group { margin-top: 11px; }
+    .xra-search-label { margin: 0 2px 6px; color: #777; font-size: 10.5px; }
+    .xra-search-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+    .xra-search-chip, .xra-search-clear { min-height: 29px; padding: 0 10px; border: 1px solid #d1d1cd; border-radius: 15px; background: #fff; color: #333; font-size: 11px; }
+    .xra-search-clear { color: #777; }
+    .xra-context { margin-bottom: 5px; color: #777; font-size: 10.5px; }
     .xra-list { padding: 8px 0 76px; }
     .xra-card { position: relative; display: grid; grid-template-columns: minmax(0,1fr); gap: 8px; margin: 0 10px 8px; padding: 13px 14px; border: 1px solid #dededb; border-radius: 13px; background: #fff; cursor: pointer; -webkit-tap-highlight-color: transparent; }
     .xra-card.has-media { grid-template-columns: minmax(0,1fr) ${CONFIG.imageWidth}px; }
@@ -1023,8 +1047,9 @@
     return Array.from(document.querySelectorAll("article")).find(article => !article.closest(`#${ROOT_ID}`) && (postUrl ? getPostUrl(article) === postUrl : getPostKey(article) === key)) || null;
   };
 
-  const createCard = article => {
-    if (isPromoted(article) || isReply(article)) return null;
+  const createCard = (article, options = {}) => {
+    const reply = isReply(article);
+    if (isPromoted(article) || (reply && !options.allowReplies)) return null;
     const handle = getHandle(article), time = getTime(article), text = getText(article), postUrl = getPostUrl(article), mediaSources = getMediaSources(article), linkPreview = getLinkPreview(article), key = getPostKey(article);
     if (!handle && !text && !linkPreview) return null;
     const card = document.createElement("article"); card.className = `xra-card${mediaSources.length ? " has-media" : ""}`; card.setAttribute(CARD_ATTR, key);
@@ -1033,6 +1058,7 @@
     const handleEl = document.createElement("div"); handleEl.className = "xra-handle"; handleEl.textContent = handle.replace(/^@/, "");
     const timeEl = document.createElement("div"); timeEl.className = "xra-time"; timeEl.textContent = time;
     const textEl = document.createElement("div"); textEl.className = "xra-text"; textEl.textContent = text;
+    if (reply) { const context = document.createElement("div"); context.className = "xra-context"; context.textContent = "返信"; main.appendChild(context); }
     meta.append(handleEl, timeEl); main.appendChild(meta); if (text) main.appendChild(textEl);
     if (linkPreview) {
       const linkCard = document.createElement("button"); linkCard.className = "xra-link-card"; linkCard.type = "button"; linkCard.setAttribute("aria-label", `${linkPreview.title}を開く`);
@@ -1081,17 +1107,50 @@
   };
 
   const currentSection = () => CONFIG.sections.find(section => section.id === activeSectionId);
+  const navigateSearch = (query, mode = "live") => { const value = query.trim(); if (!value) return; saveSearchQuery(value); navigateReader(searchUrl(value, mode)); };
+  const createSearchChip = (query, className = "xra-search-chip") => { const button = document.createElement("button"); button.type = "button"; button.className = className; button.textContent = query; button.addEventListener("click", () => navigateSearch(query, "live")); return button; };
+  const createSearchTools = () => {
+    const tools = document.createElement("div"); tools.className = "xra-search-tools";
+    const form = document.createElement("form"); form.className = "xra-search-form";
+    const input = document.createElement("input"); input.className = "xra-search-input"; input.type = "search"; input.name = "q"; input.value = currentSearchQuery(); input.placeholder = "Xを検索"; input.autocomplete = "off"; input.setAttribute("aria-label", "検索語");
+    const submit = document.createElement("button"); submit.className = "xra-search-submit"; submit.type = "submit"; submit.textContent = "検索";
+    form.addEventListener("submit", event => { event.preventDefault(); navigateSearch(input.value, "live"); });
+    form.append(input, submit); tools.appendChild(form);
+    const modes = document.createElement("div"); modes.className = "xra-search-modes"; modes.setAttribute("aria-label", "検索結果の種類");
+    [["live","最新"],["top","話題"],["media","画像"]].forEach(([mode, label]) => { const button = document.createElement("button"); button.type = "button"; button.className = "xra-search-mode"; button.textContent = label; button.dataset.active = String(currentSearchMode() === mode); button.addEventListener("click", () => { const query = input.value.trim() || currentSearchQuery(); if (query) navigateSearch(query, mode); }); modes.appendChild(button); });
+    tools.appendChild(modes);
+    if (!currentSearchQuery()) {
+      const groups = document.createElement("div"); groups.className = "xra-search-groups";
+      const history = readSearchHistory();
+      if (history.length) {
+        const group = document.createElement("div"); group.className = "xra-search-group";
+        const label = document.createElement("div"); label.className = "xra-search-label"; label.textContent = "最近の検索";
+        const chips = document.createElement("div"); chips.className = "xra-search-chips"; history.forEach(query => chips.appendChild(createSearchChip(query)));
+        const clear = document.createElement("button"); clear.type = "button"; clear.className = "xra-search-clear"; clear.textContent = "履歴を消す"; clear.addEventListener("click", () => { writeSetting(SEARCH_HISTORY_KEY, "[]"); group.remove(); });
+        chips.appendChild(clear); group.append(label, chips); groups.appendChild(group);
+      }
+      const recommended = document.createElement("div"); recommended.className = "xra-search-group";
+      const label = document.createElement("div"); label.className = "xra-search-label"; label.textContent = "おすすめ";
+      const chips = document.createElement("div"); chips.className = "xra-search-chips"; ["本日のニュース","AI","美容","ネイル","レシピ"].forEach(query => chips.appendChild(createSearchChip(query)));
+      recommended.append(label, chips); groups.appendChild(recommended); tools.appendChild(groups);
+    }
+    return tools;
+  };
   const renderCurrentFeed = () => {
     const section = currentSection();
     const list = document.querySelector(`.xra-section[data-section-id="${activeSectionId}"] .xra-list`);
     if (!section || !list) return;
     if (!section.url) { list.innerHTML = '<div class="xra-message">このリストのURLが未設定です。<br>スクリプト上部のCONFIG.sectionsへXリストURLを入力してください。</div>'; return; }
+    const searchLanding = section.id === "search" && !currentSearchQuery();
+    if (searchLanding) { list.innerHTML = '<div class="xra-message">検索語を入力してください</div>'; return; }
     const existing = new Set(Array.from(list.querySelectorAll(`[${CARD_ATTR}]`)).map(card => card.getAttribute(CARD_ATTR)));
     let added = 0;
-    document.querySelectorAll("article").forEach(article => { if (article.closest(`#${ROOT_ID}`)) return; const key = getPostKey(article); if (!key || existing.has(key)) return; const card = createCard(article); if (!card) return; list.appendChild(card); existing.add(key); added += 1; });
+    document.querySelectorAll("article").forEach(article => { if (article.closest(`#${ROOT_ID}`)) return; const key = getPostKey(article); if (!key || existing.has(key)) return; const card = createCard(article, { allowReplies: section.id === "search" }); if (!card) return; list.appendChild(card); existing.add(key); added += 1; });
     if (!list.querySelector(".xra-card") && !list.querySelector(".xra-message")) list.innerHTML = '<div class="xra-message">投稿を読み込んでいます</div>';
     if (added > 0) list.querySelector(".xra-message")?.remove();
-    tryRestorePosition(document.getElementById(ROOT_ID));
+    const root = document.getElementById(ROOT_ID);
+    if (section.id === "search" && currentSearchQuery() && !list.querySelector(".xra-card") && root?.xraCreatedAt && Date.now() - root.xraCreatedAt > 4500) list.innerHTML = '<div class="xra-message">検索結果が見つかりません</div>';
+    tryRestorePosition(root);
   };
 
   const preloadNativeFeed = root => {
@@ -1109,7 +1168,7 @@
     if (root?.scrollTop > 20) { root.xraRestore = null; root.scrollTo({ top: 0, behavior: "auto" }); saveReadingPosition(root); return; }
     if (root) { root.xraRestore = null; root.scrollTop = 0; saveReadingPosition(root); }
     window.scrollTo(0, 0);
-    storePosition(location.pathname, null);
+    storePosition(currentPageKey(), null);
     if (root) root.xraPath = null;
     location.reload();
     return;
@@ -1122,6 +1181,7 @@
     tab.appendChild(label); tab.title = "表示中のタブを押すと先頭へ。先頭で押すと更新"; tab.addEventListener("click", () => switchSection(section.id));
     const content = document.createElement("div"); content.className = "xra-content";
     const list = document.createElement("div"); list.className = "xra-list";
+    if (section.id === "search") content.appendChild(createSearchTools());
     content.appendChild(list); panel.appendChild(content); return { tab, panel };
   };
 
@@ -1187,7 +1247,7 @@
 
   const createRoot = () => {
     if (document.getElementById(ROOT_ID)) { hideBootScreen(); return; }
-    const root = document.createElement("div"); root.id = ROOT_ID; root.dataset.viewMode = getSavedViewMode();
+    const root = document.createElement("div"); root.id = ROOT_ID; root.dataset.viewMode = getSavedViewMode(); root.xraCreatedAt = Date.now();
     const header = document.createElement("header"); header.className = "xra-header";
     const tabs = document.createElement("nav"); tabs.className = "xra-tabs"; tabs.setAttribute("role", "tablist"); tabs.setAttribute("aria-label", "リストを切り替える");
     const sections = document.createElement("main"); sections.className = "xra-sections";
@@ -1210,7 +1270,7 @@
     addListSwipeNavigation(root);
     root.append(header, sections, viewModeButton, bookmarksList); document.body.appendChild(root);
     trackReadingPosition(root);
-    renderCurrentFeed(); setTimeout(renderCurrentFeed, 400); setTimeout(renderCurrentFeed, 1000); setTimeout(renderCurrentFeed, 1800);
+    renderCurrentFeed(); setTimeout(renderCurrentFeed, 400); setTimeout(renderCurrentFeed, 1000); setTimeout(renderCurrentFeed, 1800); setTimeout(renderCurrentFeed, 5000);
     hideBootScreen();
   };
 
@@ -1317,7 +1377,7 @@
     }
     renderToggleButton();
   };
-  const detectInitialSection = () => { const currentPath = location.pathname; const matched = CONFIG.sections.find(section => { if (!section.url) return false; try { return new URL(section.url).pathname === currentPath; } catch { return false; } }); activeSectionId = matched?.id || "following"; };
+  const detectInitialSection = () => { if (isSearchPage()) { activeSectionId = "search"; return; } const currentPath = location.pathname; const matched = CONFIG.sections.find(section => { if (!section.url) return false; try { return new URL(section.url).pathname === currentPath; } catch { return false; } }); activeSectionId = matched?.id || "following"; };
   
 
 // Step3: URLの投稿IDと一致するメイン投稿を赤枠で確認
@@ -1970,7 +2030,7 @@
 
     clearDetailSimplification();
     const feed = document.getElementById(ROOT_ID);
-    if (feed && feed.xraPath !== location.pathname) { saveReadingPosition(feed); feed.remove(); }
+    if (feed && feed.xraPath !== currentPageKey()) { saveReadingPosition(feed); feed.remove(); }
     document.querySelector("article.xra-detail-main")?.classList.remove("xra-detail-main");
     if (readSetting("xra-enabled") !== "false" && !document.getElementById(ROOT_ID)) {
       enableReader();

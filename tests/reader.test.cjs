@@ -34,7 +34,7 @@ const check = async (name, run) => { await run(); console.log(`PASS ${name}`); p
   await page.waitForSelector(".xra-card");
 
   await check("fixed tabs, no counts, cards and reposts preserved", async () => {
-    assert.deepEqual(await page.locator(".xra-section-tab").allTextContents(), ["ホーム", "1", "2", "株", "レシピ"]);
+    assert.deepEqual(await page.locator(".xra-section-tab").allTextContents(), ["ホーム", "1", "2", "株", "レシピ", "検索"]);
     assert.equal(await page.locator(".xra-card").count(), 30);
     assert.equal(await page.locator(".xra-header").evaluate(node => getComputedStyle(node).position), "fixed");
     assert.equal(await page.locator(".xra-handle").first().textContent(), "reader");
