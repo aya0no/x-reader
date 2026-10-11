@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         X Reader Accordion v7.0.4-step11-light
 // @namespace    local.x-reader-accordion
-// @version      7.0.4.14.1
+// @version      7.0.4.14.2
 // @description  検索、閲覧位置の復元、画像送り、返信・引用表示に対応した軽量なX Readerです。
 // @match        https://x.com/*
 // @match        https://twitter.com/*
@@ -111,7 +111,7 @@
     const style = document.createElement("style");
     style.id = BOOT_STYLE_ID;
     style.textContent = `
-      html.${BOOTING_CLASS}, html.${BOOTING_CLASS} body { background: #f7f7f5 !important; }
+      html.${BOOTING_CLASS}, html.${BOOTING_CLASS} body { background: #fbfbfa !important; }
       html.${BOOTING_CLASS} body { overflow: hidden !important; }
       html.${BOOTING_CLASS} body > * { visibility: hidden !important; }
       html.${BOOTING_CLASS}::before {
@@ -123,7 +123,7 @@
         align-items: center;
         justify-content: center;
         padding-bottom: 26px;
-        background: #f7f7f5;
+        background: #fbfbfa;
         color: #171717;
         font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Yu Gothic UI", "Yu Gothic", sans-serif;
         font-size: 15px;
@@ -175,9 +175,9 @@
   let detailState = null;
 
   const css = `
-    #${ROOT_ID} { position: fixed; inset: 0; z-index: 2147483000; overflow-y: auto; background: #f7f7f5; color: #171717; font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Yu Gothic UI", "Yu Gothic", sans-serif; -webkit-overflow-scrolling: touch; }
+    #${ROOT_ID} { position: fixed; inset: 0; z-index: 2147483000; overflow-y: auto; background: #fbfbfa; color: #171717; font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Yu Gothic UI", "Yu Gothic", sans-serif; -webkit-overflow-scrolling: touch; }
     #${ROOT_ID} * { box-sizing: border-box; }
-    .xra-header { position: fixed; top: 0; right: 0; left: 0; z-index: 20; display: flex; align-items: center; min-height: 46px; padding: 7px 10px; background: rgba(247,247,245,.96); border-bottom: 1px solid #ddd; backdrop-filter: blur(12px); }
+    .xra-header { position: fixed; top: 0; right: 0; left: 0; z-index: 20; display: flex; align-items: center; min-height: 46px; padding: 7px 10px; background: rgba(251,251,250,.96); border-bottom: 1px solid #ddd; backdrop-filter: blur(12px); }
     .xra-tabs { display: flex; gap: 6px; width: 100%; max-width: 680px; margin: 0 auto; overflow-x: auto; scrollbar-width: none; -webkit-overflow-scrolling: touch; }
     .xra-tabs::-webkit-scrollbar { display: none; }
     .xra-section-tab { display: inline-flex; flex: 0 0 auto; align-items: center; justify-content: center; min-height: 31px; padding: 0 11px; border: 1px solid #cececa; border-radius: 16px; background: #fff; color: #444; font-size: 11.5px; font-weight: 650; white-space: nowrap; }
@@ -187,7 +187,7 @@
     .xra-section { display: none; }
     .xra-section[data-open="true"] { display: block; }
     .xra-content { display: block; }
-    .xra-search-tools { position: sticky; top: 46px; z-index: 12; padding: 10px 10px 8px; border-bottom: 1px solid #dededb; background: rgba(247,247,245,.97); backdrop-filter: blur(12px); }
+    .xra-search-tools { position: sticky; top: 46px; z-index: 12; padding: 10px 10px 8px; border-bottom: 1px solid #dededb; background: rgba(251,251,250,.97); backdrop-filter: blur(12px); }
     .xra-search-form { display: flex; gap: 7px; }
     .xra-search-input { min-width: 0; flex: 1; height: 36px; padding: 0 12px; border: 1px solid #cfcfcb; border-radius: 18px; outline: none; background: #fff; color: #171717; font: inherit; font-size: 13px; }
     .xra-search-input:focus { border-color: #666; }
@@ -214,7 +214,7 @@
     .xra-media { display: none; width: 100%; height: 100%; padding: 0; overflow: hidden; border: 1px solid #d5d5d2; border-radius: 8px; background: #eee; cursor: zoom-in; }
     .xra-media:first-child { display: block; }
     .xra-media img { display: block; width: 100%; height: 100%; object-fit: cover; ${CONFIG.monochrome ? "filter: grayscale(1);" : ""} }
-    .xra-link-card { display: block; width: 100%; margin-top: 8px; padding: 7px 8px; overflow: hidden; border: 1px solid #d8d8d5; border-radius: 9px; background: #fafaf8; color: #171717; text-align: left; }
+    .xra-link-card { display: block; width: 100%; margin-top: 8px; padding: 7px 8px; overflow: hidden; border: 1px solid #d8d8d5; border-radius: 9px; background: #fdfdfc; color: #171717; text-align: left; }
     .xra-link-site { overflow: hidden; color: #777; font-size: 9.5px; text-overflow: ellipsis; white-space: nowrap; }
     .xra-link-title { display: -webkit-box; margin-top: 1px; overflow: hidden; font-size: 11.5px; font-weight: 650; line-height: 1.35; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
     .xra-link-summary { display: -webkit-box; margin-top: 2px; overflow: hidden; color: #666; font-size: 10.5px; line-height: 1.35; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
@@ -223,7 +223,7 @@
     .xra-card-bookmark svg { display: block; width: 13px; height: 13px; fill: currentColor; }
     .xra-card-bookmark[data-saved="true"] { border-color: #171717; background: #171717; color: #fff; }
     .xra-card-footer { display: none; }
-    #${ROOT_ID}[data-view-mode="comfortable"] { background: #f3f3f1; }
+    #${ROOT_ID}[data-view-mode="comfortable"] { background: #fafaf9; }
     #${ROOT_ID}[data-view-mode="comfortable"] .xra-list { padding: 8px 0 82px; }
     #${ROOT_ID}[data-view-mode="comfortable"] .xra-card { display: block; margin: 0 0 8px; padding: 18px 20px 22px; border: 0; border-bottom: 1px solid #dcdcd9; border-radius: 0; }
     #${ROOT_ID}[data-view-mode="comfortable"] .xra-main { padding-right: 40px; }
@@ -325,7 +325,7 @@
     /* Step4: 判定済みのメイン投稿だけ見た目を変更 */
     html.xra-detail-page,
     html.xra-detail-page body {
-      background: #f7f7f7 !important;
+      background: #fbfbfa !important;
       color: #171717 !important;
     }
 
@@ -333,7 +333,7 @@
       margin: 0 !important;
       padding: 14px 12px 18px !important;
       border: 0 !important;
-      background: #f7f7f7 !important;
+      background: #fbfbfa !important;
       color: #171717 !important;
       box-shadow: none !important;
     }
@@ -463,7 +463,7 @@
       inset: 0;
       z-index: 2147483200;
       overflow-y: auto;
-      background: #f7f7f7;
+      background: #fbfbfa;
       color: #171717;
       font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans",
         "Yu Gothic UI", "Yu Gothic", sans-serif;
@@ -490,7 +490,7 @@
       min-height: 46px;
       padding: 7px 10px;
       border-bottom: 1px solid #ddd;
-      background: rgba(247,247,247,.96);
+      background: rgba(251,251,250,.96);
       backdrop-filter: blur(12px);
     }
 
@@ -520,7 +520,7 @@
       min-height: calc(100vh - 46px);
       margin: 0 auto;
       padding: 14px 12px 110px;
-      background: #f7f7f7;
+      background: #fbfbfa;
     }
 
     .xra-detail-profile {
@@ -603,7 +603,7 @@
     }
 
     .xra-detail-quote:active {
-      background: #f3f3f1;
+      background: #fafaf9;
     }
 
     .xra-detail-quote-identity {
@@ -740,7 +740,7 @@
     }
 
     .xra-detail-reply:active {
-      background: #f1f1ef;
+      background: #f8f8f7;
     }
 
     .xra-detail-reply-profile {
