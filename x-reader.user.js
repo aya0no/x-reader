@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         X Reader Accordion v7.0.4-step11-light
 // @namespace    local.x-reader-accordion
-// @version      7.0.4.14.12
+// @version      7.0.4.14.13
 // @description  検索、閲覧位置の復元、画像送り、返信・引用表示に対応した軽量なX Readerです。
 // @match        https://x.com/*
 // @match        https://twitter.com/*
@@ -63,7 +63,24 @@
   };
   const saveReadingPosition = root => { if (root?.isConnected && root.xraPath && !root.xraRestore) storePosition(root.xraPath, captureReadingPosition(root)); };
   const saveCurrentPosition = () => { saveReadingPosition(document.getElementById(ROOT_ID)); saveReadingPosition(document.getElementById(DETAIL_ROOT_ID)); };
-  const navigateReader = url => { saveCurrentPosition(); location.href = url; };
+  const findNativeLink = (url, selectors = 'a[href]') => {
+    const target = new URL(url, location.origin);
+    return Array.from(document.querySelectorAll(selectors)).find(link => {
+      if (link.closest(`#${ROOT_ID}, #${DETAIL_ROOT_ID}, #xra-navigation-dock`)) return false;
+      try {
+        const candidate = new URL(link.getAttribute("href"), location.origin);
+        return candidate.origin === target.origin && candidate.pathname.replace(/\/$/, "") === target.pathname.replace(/\/$/, "") && candidate.search === target.search;
+      } catch { return false; }
+    });
+  };
+  const navigateReader = url => {
+    saveCurrentPosition();
+    const target = new URL(url, location.origin);
+    if (target.href === location.href) return;
+    const link = findNativeLink(target.href);
+    if (link) link.click();
+    else location.assign(target.href);
+  };
   const tryRestorePosition = root => {
     const pending = root?.xraRestore;
     if (!pending || !root.isConnected || root.xraPath !== currentPageKey()) return;
@@ -1134,7 +1151,7 @@
     message.textContent = expired ? `${label}を取得できていません。再試行するか、通常表示でXの状態を確認してください` : `${label}を読み込んでいます`;
     if (expired) {
       const actions = document.createElement("div"); actions.className = "xra-load-actions";
-      [["再試行", () => location.reload()], ["通常表示", () => disableReader()]].forEach(([label, action]) => {
+      [["再試行", () => location.reload()], ["通常表示", () => disableReader()], ["ホーム", () => location.replace(`${location.origin}/home`)]].forEach(([label, action]) => {
         const button = document.createElement("button"); button.type = "button"; button.textContent = label; button.addEventListener("click", action); actions.appendChild(button);
       });
       message.appendChild(actions);
@@ -1343,17 +1360,10 @@
   const navigateNativePage = (url, selectors) => {
     saveCurrentPosition();
     const target = new URL(url);
-    const links = Array.from(document.querySelectorAll(selectors));
-    const link = links.find(item => {
-      if (item.closest(`#${ROOT_ID}, #${DETAIL_ROOT_ID}`)) return false;
-      try { const candidate = new URL(item.getAttribute("href"), location.origin); return candidate.origin === target.origin && candidate.pathname.replace(/\/$/, "") === target.pathname.replace(/\/$/, ""); }
-      catch { return false; }
-    });
+    if (target.href === location.href) return;
+    const link = findNativeLink(target.href, selectors);
     if (!link) { location.assign(target.href); return; }
-    const originalPath = location.pathname;
     link.click();
-    if (location.pathname !== originalPath) return;
-    setTimeout(() => { if (location.pathname === originalPath) location.assign(target.href); }, 1400);
   };
   const openSettingsMenu = () => {
     if (document.getElementById(SETTINGS_MENU_ID)) return;

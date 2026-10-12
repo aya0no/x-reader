@@ -1,0 +1,20 @@
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const vm = require('node:vm');
+const source = fs.readFileSync(require('node:path').join(__dirname, '../x-reader.user.js'), 'utf8');
+const extract = (name, end) => source.slice(source.indexOf(`  const ${name} =`), source.indexOf(`  const ${end} =`, source.indexOf(`  const ${name} =`)));
+let clicks = 0, assigns = 0, saved = 0;
+const link = (href, owned = false) => ({ getAttribute: () => href, closest: () => owned ? {} : null, click: () => { clicks++; } });
+let links = [link('/ngmkkrm', true), link('/ngmkkrm')];
+const location = { origin: 'https://x.com', href: 'https://x.com/home', assign: () => { assigns++; } };
+const context = vm.createContext({ URL, location, ROOT_ID: 'xra-root', DETAIL_ROOT_ID: 'xra-detail-root', document: { querySelectorAll: () => links }, saveCurrentPosition: () => { saved++; } });
+vm.runInContext(extract('findNativeLink', 'tryRestorePosition') + extract('navigateNativePage', 'openSettingsMenu') + '\nglobalThis.go = navigateReader; globalThis.native = navigateNativePage;', context);
+context.native('https://x.com/ngmkkrm', 'a[href]');
+assert.equal(clicks, 1); assert.equal(assigns, 0);
+// Xの遷移が遅くても、タイマーによる二重の読み込みを開始しない。
+assert.equal(source.includes('setTimeout(() => { if (location.pathname === originalPath) location.assign(target.href); }, 1400)'), false);
+context.go('https://x.com/ngmkkrm');
+assert.equal(clicks, 2); assert.equal(assigns, 0);
+links = []; context.go('https://x.com/i/lists/123');
+assert.equal(assigns, 1); assert.equal(saved, 3);
+console.log('PASS: native routing once, owned links ignored, full navigation only without native link');
