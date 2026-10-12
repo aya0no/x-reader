@@ -37,6 +37,8 @@ const check = async (name, run) => { await run(); console.log(`PASS ${name}`); p
     assert.deepEqual(await page.locator(".xra-section-tab").allTextContents(), ["ホーム", "1", "2", "株", "レシピ"]);
     assert.equal(await page.locator(".xra-card").count(), 30);
     assert.equal(await page.locator(".xra-header").evaluate(node => getComputedStyle(node).position), "fixed");
+    assert.equal(await page.locator("#xra-boot-style").count(), 0);
+    assert.equal(await page.locator("html.xra-booting").count(), 0);
     assert.equal(await page.locator(".xra-handle").first().textContent(), "reader");
     const overlap = await page.locator(".xra-card").first().evaluate(card => { const a = card.querySelector(".xra-card-bookmark").getBoundingClientRect(), b = card.querySelector(".xra-media-list").getBoundingClientRect(); return a.right > b.left; });
     assert.equal(overlap, false);
