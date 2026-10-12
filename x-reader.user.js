@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         X Reader Accordion v7.0.4-step11-light
 // @namespace    local.x-reader-accordion
-// @version      7.0.4.14.14
+// @version      7.0.4.14.15
 // @description  検索、閲覧位置の復元、画像送り、返信・引用表示に対応した軽量なX Readerです。
 // @match        https://x.com/*
 // @match        https://twitter.com/*
@@ -892,7 +892,7 @@
       #${TOGGLE_ID} { right: 16px; }
     }
     #xra-navigation-dock {
-      position: fixed; left: max(12px, env(safe-area-inset-left, 0px)); right: max(12px, env(safe-area-inset-right, 0px));
+      position: fixed; left: max(12px, env(safe-area-inset-left, 0px));
       bottom: calc(12px + env(safe-area-inset-bottom, 0px));
       z-index: 2147483300; display: flex; gap: 2px; padding: 5px;
       border: 1px solid #ddd; border-radius: 30px; background: rgba(255,255,255,.97);
@@ -904,7 +904,7 @@
     }
     #${TOGGLE_ID} {
       width: 104px; height: 44px; right: max(12px, env(safe-area-inset-right, 0px));
-      bottom: calc(12px + env(safe-area-inset-bottom, 0px)); z-index: 2147483301;
+      bottom: calc(18px + env(safe-area-inset-bottom, 0px)); z-index: 2147483301;
       display: flex; gap: 0; padding: 3px; border: 1px solid #c9c9c9; border-radius: 24px;
       background: #fff; color: #222; font-family: -apple-system, BlinkMacSystemFont, sans-serif;
       font-size: 11px; font-weight: 700; line-height: 1;
@@ -918,14 +918,10 @@
     #${TOGGLE_ID} span { position: relative; z-index: 1; display: flex; flex: 1; align-items: center; justify-content: center; color: #555; }
     #${TOGGLE_ID}[aria-checked="true"] .xra-toggle-reader,
     #${TOGGLE_ID}[aria-checked="false"] .xra-toggle-native { color: #fff; }
-    #xra-navigation-dock > #${TOGGLE_ID} {
-      position: relative; flex: 0 0 104px; width: 104px; height: 44px; margin-left: auto;
-      border: 1px solid #c9c9c9; background: #fff; box-shadow: none;
-    }
     @media (max-width: 350px) {
-      #xra-navigation-dock { left: 8px; right: 8px; gap: 0; padding: 4px; }
-      #xra-navigation-dock > button { flex-basis: 42px; width: 42px; height: 44px; }
-      #xra-navigation-dock > #${TOGGLE_ID} { flex-basis: 104px; width: 104px; height: 44px; }
+      #xra-navigation-dock { left: 8px; gap: 2px; padding: 4px; }
+      #xra-navigation-dock > button { flex-basis: 40px; width: 40px; height: 44px; }
+      #${TOGGLE_ID} { right: 8px; bottom: calc(17px + env(safe-area-inset-bottom, 0px)); }
     }
     .xra-list { padding-bottom: calc(100px + env(safe-area-inset-bottom, 0px)); }
     #${DETAIL_ROOT_ID} { padding-bottom: calc(100px + env(safe-area-inset-bottom, 0px)); }
@@ -1405,15 +1401,9 @@
 
   const syncNavigationDock = visible => {
     const existing = document.getElementById("xra-navigation-dock");
-    const toggle = document.getElementById(TOGGLE_ID);
-    if (!visible) {
-      if (existing?.contains(toggle)) document.body.appendChild(toggle);
-      existing?.remove();
-      return;
-    }
+    if (!visible) { existing?.remove(); return; }
     if (existing) {
       existing.querySelector(`#${SEARCH_BUTTON_ID}`).dataset.active = String(activeSectionId === "search");
-      if (toggle && toggle.parentElement !== existing) existing.appendChild(toggle);
       return;
     }
     const dock = document.createElement("nav"); dock.id = "xra-navigation-dock"; dock.setAttribute("aria-label", "操作メニュー");
@@ -1437,7 +1427,6 @@
     const settingsIcon = createNavigationIcon("M10 2h4l.5 2.1 1.7.7 1.9-1 2 3.5-1.5 1.4.2 1.8 1.5 1.4-2 3.5-1.9-1-1.7.7L14 22h-4l-.5-2.1-1.7-.7-1.9 1-2-3.5 1.5-1.4-.2-1.8-1.5-1.4 2-3.5 1.9 1 1.7-.7L10 2Zm2 7a3 3 0 1 0 0 6 3 3 0 0 0 0-6Z");
     settingsButton.appendChild(settingsIcon); settingsButton.addEventListener("click", openSettingsMenu);
     dock.append(backButton, searchButton, bookmarksList, settingsButton);
-    if (toggle) dock.appendChild(toggle);
     document.body.appendChild(dock);
   };
 

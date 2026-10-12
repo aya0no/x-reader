@@ -48,6 +48,9 @@ const check = async (name, run) => { await run(); console.log(`PASS ${name}`); p
   await check("mode switch returns after X replaces it", async () => {
     const box = await page.locator("#xra-toggle").boundingBox();
     assert.ok(box.width >= 100 && box.height >= 44);
+    assert.equal(await page.locator("#xra-navigation-dock #xra-toggle").count(), 0);
+    const dockButton = await page.locator("#xra-back-button").boundingBox();
+    assert.ok(Math.abs(box.y - dockButton.y) <= 2);
     assert.equal(await page.locator("#xra-toggle").getAttribute("aria-checked"), "true");
     await page.locator("#xra-toggle").evaluate(node => node.remove());
     await page.waitForSelector("#xra-toggle");
