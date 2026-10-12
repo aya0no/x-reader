@@ -36,6 +36,7 @@ const check = async (name, run) => { await run(); console.log(`PASS ${name}`); p
 
   await check("fixed tabs, no counts, cards and reposts preserved", async () => {
     assert.deepEqual(await page.locator(".xra-section-tab").allTextContents(), ["ホーム", "1", "2", "株", "レシピ"]);
+    assert.ok((await page.locator(".xra-section-tab").first().boundingBox()).height >= 44);
     assert.equal(await page.locator(".xra-card").count(), 30);
     assert.equal(await page.locator(".xra-header").evaluate(node => getComputedStyle(node).position), "fixed");
     assert.equal(await page.locator("#xra-boot-style").count(), 0);
@@ -44,9 +45,10 @@ const check = async (name, run) => { await run(); console.log(`PASS ${name}`); p
     assert.equal(await page.locator(".xra-card-bookmark").count(), 0);
   });
 
-  await check("larger toggle returns after X replaces it", async () => {
+  await check("mode switch returns after X replaces it", async () => {
     const box = await page.locator("#xra-toggle").boundingBox();
-    assert.ok(box.width >= 50 && box.height >= 50);
+    assert.ok(box.width >= 100 && box.height >= 44);
+    assert.equal(await page.locator("#xra-toggle").getAttribute("aria-checked"), "true");
     await page.locator("#xra-toggle").evaluate(node => node.remove());
     await page.waitForSelector("#xra-toggle");
   });
@@ -204,11 +206,12 @@ const check = async (name, run) => { await run(); console.log(`PASS ${name}`); p
   });
 
   await check("detail toggle switches both ways", async () => {
-    assert.equal(await page.getByRole("button", { name: "通常表示に戻す" }).count(), 1);
+    assert.equal(await page.getByRole("switch", { name: "通常表示に戻す" }).count(), 1);
     await page.locator("#xra-toggle").click();
     assert.equal(await page.locator("#xra-detail-root").count(), 0);
     assert.equal(await page.locator("html.xra-detail-page").count(), 0);
-    await page.getByRole("button", { name: "簡素表示に切り替える" }).click();
+    assert.equal(await page.locator("#xra-toggle").getAttribute("aria-checked"), "false");
+    await page.getByRole("switch", { name: "簡素表示に切り替える" }).click();
     await page.waitForSelector("#xra-detail-root");
   });
 

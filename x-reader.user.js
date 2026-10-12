@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         X Reader Accordion v7.0.4-step11-light
 // @namespace    local.x-reader-accordion
-// @version      7.0.4.14.13
+// @version      7.0.4.14.14
 // @description  検索、閲覧位置の復元、画像送り、返信・引用表示に対応した軽量なX Readerです。
 // @match        https://x.com/*
 // @match        https://twitter.com/*
@@ -146,13 +146,13 @@
   const css = `
     #${ROOT_ID} { position: fixed; inset: 0; z-index: 2147483000; overflow-y: auto; background: #fbfbfa; color: #171717; font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Yu Gothic UI", "Yu Gothic", sans-serif; -webkit-overflow-scrolling: touch; }
     #${ROOT_ID} * { box-sizing: border-box; }
-    .xra-header { position: fixed; top: 0; right: 0; left: 0; z-index: 20; display: flex; align-items: center; min-height: 46px; padding: 7px 10px; background: rgba(251,251,250,.96); border-bottom: 1px solid #ddd; backdrop-filter: blur(12px); }
+    .xra-header { position: fixed; top: 0; right: 0; left: 0; z-index: 20; display: flex; align-items: center; min-height: 58px; padding: 7px 10px; background: rgba(251,251,250,.96); border-bottom: 1px solid #ddd; backdrop-filter: blur(12px); }
     .xra-tabs { display: flex; gap: 6px; width: 100%; max-width: 680px; margin: 0 auto; overflow-x: auto; scrollbar-width: none; -webkit-overflow-scrolling: touch; }
     .xra-tabs::-webkit-scrollbar { display: none; }
-    .xra-section-tab { display: inline-flex; flex: 0 0 auto; align-items: center; justify-content: center; min-height: 31px; padding: 0 11px; border: 1px solid #cececa; border-radius: 16px; background: #fff; color: #444; font-size: 11.5px; font-weight: 650; white-space: nowrap; }
+    .xra-section-tab { display: inline-flex; flex: 0 0 auto; align-items: center; justify-content: center; min-height: 44px; padding: 0 14px; border: 1px solid #cececa; border-radius: 22px; background: #fff; color: #444; font-size: 13px; font-weight: 650; white-space: nowrap; }
     .xra-section-tab[data-active="true"] { border-color: #171717; background: #171717; color: #fff; }
     .xra-section-tab:active { transform: scale(.97); }
-    .xra-sections { max-width: 680px; margin: 0 auto; padding-top: 46px; }
+    .xra-sections { max-width: 680px; margin: 0 auto; padding-top: 58px; }
     .xra-section { display: none; }
     .xra-section[data-open="true"] { display: block; }
     .xra-content { display: block; }
@@ -892,7 +892,7 @@
       #${TOGGLE_ID} { right: 16px; }
     }
     #xra-navigation-dock {
-      position: fixed; left: max(12px, env(safe-area-inset-left, 0px));
+      position: fixed; left: max(12px, env(safe-area-inset-left, 0px)); right: max(12px, env(safe-area-inset-right, 0px));
       bottom: calc(12px + env(safe-area-inset-bottom, 0px));
       z-index: 2147483300; display: flex; gap: 2px; padding: 5px;
       border: 1px solid #ddd; border-radius: 30px; background: rgba(255,255,255,.97);
@@ -903,8 +903,29 @@
       border: 0; box-shadow: none; background: transparent; color: #222;
     }
     #${TOGGLE_ID} {
-      width: 54px; height: 54px; right: max(12px, env(safe-area-inset-right, 0px));
+      width: 104px; height: 44px; right: max(12px, env(safe-area-inset-right, 0px));
       bottom: calc(12px + env(safe-area-inset-bottom, 0px)); z-index: 2147483301;
+      display: flex; gap: 0; padding: 3px; border: 1px solid #c9c9c9; border-radius: 24px;
+      background: #fff; color: #222; font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+      font-size: 11px; font-weight: 700; line-height: 1;
+    }
+    #${TOGGLE_ID}::before {
+      content: ""; position: absolute; left: 3px; top: 3px; width: calc(50% - 3px);
+      height: calc(100% - 6px); border-radius: 19px; background: #171717;
+      transform: translateX(0); transition: transform .18s ease;
+    }
+    #${TOGGLE_ID}[aria-checked="false"]::before { transform: translateX(100%); }
+    #${TOGGLE_ID} span { position: relative; z-index: 1; display: flex; flex: 1; align-items: center; justify-content: center; color: #555; }
+    #${TOGGLE_ID}[aria-checked="true"] .xra-toggle-reader,
+    #${TOGGLE_ID}[aria-checked="false"] .xra-toggle-native { color: #fff; }
+    #xra-navigation-dock > #${TOGGLE_ID} {
+      position: relative; flex: 0 0 104px; width: 104px; height: 44px; margin-left: auto;
+      border: 1px solid #c9c9c9; background: #fff; box-shadow: none;
+    }
+    @media (max-width: 350px) {
+      #xra-navigation-dock { left: 8px; right: 8px; gap: 0; padding: 4px; }
+      #xra-navigation-dock > button { flex-basis: 42px; width: 42px; height: 44px; }
+      #xra-navigation-dock > #${TOGGLE_ID} { flex-basis: 104px; width: 104px; height: 44px; }
     }
     .xra-list { padding-bottom: calc(100px + env(safe-area-inset-bottom, 0px)); }
     #${DETAIL_ROOT_ID} { padding-bottom: calc(100px + env(safe-area-inset-bottom, 0px)); }
@@ -1384,8 +1405,17 @@
 
   const syncNavigationDock = visible => {
     const existing = document.getElementById("xra-navigation-dock");
-    if (!visible) { existing?.remove(); return; }
-    if (existing) { existing.querySelector(`#${SEARCH_BUTTON_ID}`).dataset.active = String(activeSectionId === "search"); return; }
+    const toggle = document.getElementById(TOGGLE_ID);
+    if (!visible) {
+      if (existing?.contains(toggle)) document.body.appendChild(toggle);
+      existing?.remove();
+      return;
+    }
+    if (existing) {
+      existing.querySelector(`#${SEARCH_BUTTON_ID}`).dataset.active = String(activeSectionId === "search");
+      if (toggle && toggle.parentElement !== existing) existing.appendChild(toggle);
+      return;
+    }
     const dock = document.createElement("nav"); dock.id = "xra-navigation-dock"; dock.setAttribute("aria-label", "操作メニュー");
     const bookmarksList = document.createElement("button");
     bookmarksList.id = BOOKMARKS_LIST_ID;
@@ -1406,7 +1436,9 @@
     const settingsButton = document.createElement("button"); settingsButton.id = SETTINGS_BUTTON_ID; settingsButton.type = "button"; settingsButton.setAttribute("aria-label", "設定を開く");
     const settingsIcon = createNavigationIcon("M10 2h4l.5 2.1 1.7.7 1.9-1 2 3.5-1.5 1.4.2 1.8 1.5 1.4-2 3.5-1.9-1-1.7.7L14 22h-4l-.5-2.1-1.7-.7-1.9 1-2-3.5 1.5-1.4-.2-1.8-1.5-1.4 2-3.5 1.9 1 1.7-.7L10 2Zm2 7a3 3 0 1 0 0 6 3 3 0 0 0 0-6Z");
     settingsButton.appendChild(settingsIcon); settingsButton.addEventListener("click", openSettingsMenu);
-    dock.append(backButton, searchButton, bookmarksList, settingsButton); document.body.appendChild(dock);
+    dock.append(backButton, searchButton, bookmarksList, settingsButton);
+    if (toggle) dock.appendChild(toggle);
+    document.body.appendChild(dock);
   };
 
   const createRoot = () => {
@@ -1426,86 +1458,26 @@
   };
 
 
-  const createToggleSvg = mode => {
-    const namespace = "http://www.w3.org/2000/svg";
-    const svg = document.createElementNS(namespace, "svg");
-    svg.setAttribute("viewBox", "0 0 24 24");
-    svg.setAttribute("aria-hidden", "true");
-
-    if (mode === "normal") {
-      // 通常表示へ戻す：ブラウザ画面風アイコン
-      const rect = document.createElementNS(namespace, "rect");
-      rect.setAttribute("x", "3");
-      rect.setAttribute("y", "4");
-      rect.setAttribute("width", "18");
-      rect.setAttribute("height", "16");
-      rect.setAttribute("rx", "2");
-
-      const line = document.createElementNS(namespace, "path");
-      line.setAttribute("d", "M3 8h18");
-
-      const dot1 = document.createElementNS(namespace, "circle");
-      dot1.setAttribute("cx", "6");
-      dot1.setAttribute("cy", "6");
-      dot1.setAttribute("r", ".5");
-      dot1.setAttribute("fill", "currentColor");
-      dot1.setAttribute("stroke", "none");
-
-      const dot2 = document.createElementNS(namespace, "circle");
-      dot2.setAttribute("cx", "8");
-      dot2.setAttribute("cy", "6");
-      dot2.setAttribute("r", ".5");
-      dot2.setAttribute("fill", "currentColor");
-      dot2.setAttribute("stroke", "none");
-
-      svg.append(rect, line, dot1, dot2);
-    } else {
-      // 簡素表示へ切り替える：リーダー／リスト風アイコン
-      const line1 = document.createElementNS(namespace, "path");
-      line1.setAttribute("d", "M8 6h11");
-
-      const line2 = document.createElementNS(namespace, "path");
-      line2.setAttribute("d", "M8 12h11");
-
-      const line3 = document.createElementNS(namespace, "path");
-      line3.setAttribute("d", "M8 18h11");
-
-      const dot1 = document.createElementNS(namespace, "circle");
-      dot1.setAttribute("cx", "4.5");
-      dot1.setAttribute("cy", "6");
-      dot1.setAttribute("r", "1");
-
-      const dot2 = document.createElementNS(namespace, "circle");
-      dot2.setAttribute("cx", "4.5");
-      dot2.setAttribute("cy", "12");
-      dot2.setAttribute("r", "1");
-
-      const dot3 = document.createElementNS(namespace, "circle");
-      dot3.setAttribute("cx", "4.5");
-      dot3.setAttribute("cy", "18");
-      dot3.setAttribute("r", "1");
-
-      svg.append(line1, line2, line3, dot1, dot2, dot3);
-    }
-
-    return svg;
-  };
-
   const renderToggleButton = () => {
     const button = document.getElementById(TOGGLE_ID);
     if (!button) return;
 
     const readerIsOpen = Boolean(document.getElementById(ROOT_ID)) || (isDetailPage() && readSetting("xra-enabled") !== "false");
     syncNavigationDock(readerIsOpen);
-    const mode = readerIsOpen ? "normal" : "reader";
+    const mode = readerIsOpen ? "reader" : "normal";
     const utilityPage = !isDetailPage() && !isReaderFeedPage();
     const label = utilityPage ? "X Readerのホームに戻る" : readerIsOpen ? "通常表示に戻す" : "簡素表示に切り替える";
 
-    // 状態が変わった時だけSVGを書き換える。
-    if (button.dataset.mode !== mode || !button.firstElementChild) {
-      button.dataset.mode = mode;
-      button.replaceChildren(createToggleSvg(mode));
+    if (!button.firstElementChild) {
+      const readerLabel = document.createElement("span"); readerLabel.className = "xra-toggle-reader"; readerLabel.textContent = "Reader";
+      const nativeLabel = document.createElement("span"); nativeLabel.className = "xra-toggle-native"; nativeLabel.textContent = "通常";
+      button.append(readerLabel, nativeLabel);
     }
+    if (button.dataset.mode !== mode) {
+      button.dataset.mode = mode;
+    }
+    button.setAttribute("role", "switch");
+    button.setAttribute("aria-checked", String(readerIsOpen));
 
     if (button.getAttribute("aria-label") !== label) {
       button.setAttribute("aria-label", label);
