@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         X Reader Accordion v7.0.4-step11-light
 // @namespace    local.x-reader-accordion
-// @version      7.0.4.14.16
+// @version      7.0.4.14.17
 // @description  検索、閲覧位置の復元、画像送り、返信・引用表示に対応した軽量なX Readerです。
 // @match        https://x.com/*
 // @match        https://twitter.com/*
@@ -31,6 +31,8 @@
   const SETTINGS_BUTTON_ID = "xra-settings-button";
   const HOME_BUTTON_ID = "xra-home-button";
   const SETTINGS_MENU_ID = "xra-settings-menu";
+  const SECTION_SETTINGS_ID = "xra-section-settings";
+  const SECTION_SETTINGS_KEY = "xra-section-settings-v1";
   const VIEW_MODE_KEY = "xra-feed-view-mode";
   const SWIPE_MIN_DISTANCE = 58;
   const SWIPE_EDGE_GUARD = 24;
@@ -133,10 +135,39 @@
       { id: "bookmarks", label: "保存", url: "https://x.com/i/bookmarks" }
     ]
   };
+  const editableSections = CONFIG.sections.filter(section => ["following", "list1", "list2", "stocks", "recipes"].includes(section.id));
+  const sectionDefaults = editableSections.map(section => ({ id: section.id, label: section.label, url: section.url }));
+  const normalizeSectionUrl = input => {
+    try {
+      const value = input.trim();
+      const url = new URL(/^https?:\/\//i.test(value) ? value : `https://${value}`);
+      if (url.protocol !== "https:" || !["x.com", "www.x.com", "twitter.com", "www.twitter.com"].includes(url.hostname) || url.username || url.password || url.pathname === "/") return null;
+      const profilePath = /^\/([A-Za-z0-9_]{1,15})(?:\/(?:with_replies|media|likes|highlights))?\/?$/.exec(url.pathname);
+      const feedPath = url.pathname === "/home" || url.pathname === "/i/bookmarks" || /^\/i\/lists\/\d+\/?$/.test(url.pathname)
+        || (profilePath && !["explore", "notifications", "settings", "search", "home", "i", "compose", "messages"].includes(profilePath[1].toLowerCase()))
+        || (url.pathname === "/search" && Boolean(url.searchParams.get("q")));
+      if (!feedPath) return null;
+      return `https://x.com${url.pathname}${url.search}`;
+    } catch { return null; }
+  };
+  const applySectionSettings = values => {
+    if (!Array.isArray(values)) return;
+    editableSections.forEach(section => {
+      const entry = values.find(value => value?.id === section.id);
+      const label = typeof entry?.label === "string" ? entry.label.trim() : "";
+      const url = typeof entry?.url === "string" ? normalizeSectionUrl(entry.url) : null;
+      if (label && label.length <= 16 && url) { section.label = label; section.url = url; }
+    });
+  };
+  try { applySectionSettings(JSON.parse(readSetting(SECTION_SETTINGS_KEY) || "[]")); } catch {}
+  const matchesSectionUrl = section => {
+    const target = new URL(section.url);
+    return target.pathname === location.pathname && (!target.search || target.search === location.search);
+  };
 
   const isProfilePage = () => /^\/ngmkkrm(?:\/(?:with_replies|media|likes|highlights))?\/?$/.test(location.pathname);
   const isNotificationsPage = () => location.pathname === "/notifications" || location.pathname.startsWith("/notifications/");
-  const isReaderFeedPage = () => isSearchPage() || isProfilePage() || isNotificationsPage() || CONFIG.sections.some(section => section.id !== "search" && new URL(section.url).pathname === location.pathname);
+  const isReaderFeedPage = () => isSearchPage() || isProfilePage() || isNotificationsPage() || location.pathname === "/home" || CONFIG.sections.some(section => section.id !== "search" && matchesSectionUrl(section));
 
   let activeSectionId = "following";
   let renderTimer = null;
@@ -157,7 +188,7 @@
     .xra-section { display: none; }
     .xra-section[data-open="true"] { display: block; }
     .xra-content { display: block; }
-    .xra-search-tools { position: sticky; top: 46px; z-index: 12; padding: 10px 10px 8px; border-bottom: 1px solid #dededb; background: rgba(251,251,250,.97); backdrop-filter: blur(12px); }
+    .xra-search-tools { position: sticky; top: 58px; z-index: 12; padding: 10px 10px 8px; border-bottom: 1px solid #dededb; background: rgba(251,251,250,.97); backdrop-filter: blur(12px); }
     .xra-search-form { display: flex; gap: 7px; }
     .xra-search-input { min-width: 0; flex: 1; height: 36px; padding: 0 12px; border: 1px solid #cfcfcb; border-radius: 18px; outline: none; background: #fff; color: #171717; font: inherit; font-size: 13px; }
     .xra-search-input:focus { border-color: #666; }
@@ -908,6 +939,17 @@
       stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round;
     }
     #${HOME_BUTTON_ID}[data-active="true"] { border-radius: 50%; background: #171717; color: #fff; }
+    #${SECTION_SETTINGS_ID} { position: fixed; inset: 0; z-index: 2147483647; display: flex; align-items: center; justify-content: center; padding: 16px; background: #0005; }
+    #${SECTION_SETTINGS_ID} .xra-section-editor { box-sizing: border-box; width: min(100%, 440px); max-height: calc(100dvh - 32px); overflow-y: auto; padding: 18px; border-radius: 18px; background: #fff; color: #171717; font: 13px -apple-system, BlinkMacSystemFont, sans-serif; }
+    .xra-section-editor h2 { margin: 0 0 14px; font-size: 17px; }
+    .xra-section-editor-row { display: grid; gap: 8px; margin-bottom: 16px; }
+    .xra-section-editor-row label { display: grid; gap: 5px; font-size: 12px; color: #555; }
+    .xra-section-editor-row input { box-sizing: border-box; width: 100%; min-height: 44px; padding: 9px 11px; border: 1px solid #ccc; border-radius: 10px; background: #fff; color: #171717; font: inherit; }
+    .xra-section-editor-row input:focus { outline: 2px solid #555; outline-offset: 1px; }
+    .xra-section-editor-error { min-height: 18px; color: #a22; }
+    .xra-section-editor-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+    .xra-section-editor-actions button { min-height: 44px; padding: 0 14px; border: 1px solid #ccc; border-radius: 22px; background: #fff; color: #171717; font: inherit; }
+    .xra-section-editor-actions button[type="submit"] { margin-left: auto; border-color: #171717; background: #171717; color: #fff; }
     #${TOGGLE_ID} {
       width: 104px; height: 44px; right: max(12px, env(safe-area-inset-right, 0px));
       bottom: calc(18px + env(safe-area-inset-bottom, 0px)); z-index: 2147483301;
@@ -1298,7 +1340,7 @@
     const section = CONFIG.sections.find(item => item.id === sectionId); if (!section) return;
     const root = document.getElementById(ROOT_ID);
     const target = new URL(section.url, location.origin);
-    if (target.pathname !== location.pathname) { navigateReader(target.href); return; }
+    if (target.pathname !== location.pathname || target.search !== location.search) { navigateReader(target.href); return; }
     if (root?.scrollTop > 20) { root.xraRestore = null; root.scrollTo({ top: 0, behavior: "auto" }); saveReadingPosition(root); return; }
     if (root) { root.xraRestore = null; root.scrollTop = 0; saveReadingPosition(root); }
     window.scrollTo(0, 0);
@@ -1388,6 +1430,50 @@
     if (!link) { location.assign(target.href); return; }
     link.click();
   };
+  const openSectionSettings = () => {
+    if (document.getElementById(SECTION_SETTINGS_ID)) return;
+    const modal = document.createElement("div"); modal.id = SECTION_SETTINGS_ID;
+    const form = document.createElement("form"); form.className = "xra-section-editor"; form.setAttribute("role", "dialog"); form.setAttribute("aria-label", "リストの設定");
+    const heading = document.createElement("h2"); heading.textContent = "上部タブの設定"; form.appendChild(heading);
+    const fields = editableSections.map((section, index) => {
+      const row = document.createElement("div"); row.className = "xra-section-editor-row";
+      const nameLabel = document.createElement("label"); nameLabel.textContent = `タブ${index + 1}の表示名`;
+      const name = document.createElement("input"); name.type = "text"; name.maxLength = 16; name.required = true; name.value = section.label; nameLabel.appendChild(name);
+      const urlLabel = document.createElement("label"); urlLabel.textContent = "移動先のXのURL";
+      const url = document.createElement("input"); url.type = "url"; url.required = true; url.inputMode = "url"; url.value = section.url; urlLabel.appendChild(url);
+      row.append(nameLabel, urlLabel); form.appendChild(row);
+      return { section, name, url };
+    });
+    const error = document.createElement("div"); error.className = "xra-section-editor-error"; error.setAttribute("role", "alert"); form.appendChild(error);
+    const actions = document.createElement("div"); actions.className = "xra-section-editor-actions";
+    const reset = document.createElement("button"); reset.type = "button"; reset.textContent = "初期設定に戻す";
+    reset.addEventListener("click", () => { fields.forEach(({ section, name, url }) => { const original = sectionDefaults.find(item => item.id === section.id); name.value = original.label; url.value = original.url; }); error.textContent = ""; });
+    const cancel = document.createElement("button"); cancel.type = "button"; cancel.textContent = "閉じる";
+    const save = document.createElement("button"); save.type = "submit"; save.textContent = "保存";
+    const close = () => { document.removeEventListener("keydown", onKeyDown); modal.remove(); };
+    const onKeyDown = event => { if (event.key === "Escape") close(); };
+    cancel.addEventListener("click", close);
+    form.addEventListener("submit", event => {
+      event.preventDefault();
+      const values = fields.map(({ section, name, url }) => ({ id: section.id, label: name.value.trim(), url: normalizeSectionUrl(url.value) }));
+      if (values.some(item => !item.label || item.label.length > 16 || !item.url)) { error.textContent = "表示名とXのホーム・リスト・プロフィール・検索結果のURLを確認してください"; return; }
+      if (new Set(values.map(item => item.url)).size !== values.length) { error.textContent = "移動先のURLが重複しています"; return; }
+      const oldActiveUrl = CONFIG.sections.find(section => section.id === activeSectionId)?.url;
+      applySectionSettings(values);
+      writeSetting(SECTION_SETTINGS_KEY, JSON.stringify(values));
+      document.querySelectorAll(`#${ROOT_ID} .xra-section-tab`).forEach(tab => {
+        const section = CONFIG.sections.find(item => item.id === tab.dataset.sectionId);
+        if (section) tab.querySelector("span").textContent = section.label;
+      });
+      close();
+      const nextUrl = CONFIG.sections.find(section => section.id === activeSectionId)?.url;
+      if (oldActiveUrl !== nextUrl && nextUrl) navigateReader(nextUrl);
+    });
+    actions.append(reset, cancel, save); form.appendChild(actions); modal.appendChild(form);
+    modal.addEventListener("click", event => { if (event.target === modal) close(); });
+    document.body.appendChild(modal); document.addEventListener("keydown", onKeyDown);
+    fields[0]?.name.focus({ preventScroll: true });
+  };
   const openSettingsMenu = () => {
     if (document.getElementById(SETTINGS_MENU_ID)) return;
     const modal = document.createElement("div"); modal.id = SETTINGS_MENU_ID;
@@ -1397,6 +1483,7 @@
     const addItem = (label, action, className = "") => { const button = document.createElement("button"); button.type = "button"; button.className = `xra-post-menu-action ${className}`.trim(); button.setAttribute("role", "menuitem"); button.textContent = label; button.addEventListener("click", () => { close(); action(); }); panel.appendChild(button); };
     addItem("マイページ", () => navigateNativePage("https://x.com/ngmkkrm", 'a[data-testid="AppTabBar_Profile_Link"][href], a[data-testid="SideNav_Profile_Link"][href], a[href="/ngmkkrm"]'));
     addItem("通知", () => navigateNativePage("https://x.com/notifications", 'a[data-testid="AppTabBar_Notifications_Link"][href], a[data-testid="SideNav_Notifications_Link"][href], a[href="/notifications"]'));
+    addItem("上部タブを編集", openSectionSettings);
     const root = document.getElementById(ROOT_ID);
     if (root) addItem(root.dataset.viewMode === "comfortable" ? "コンパクト表示に切り替える" : "ゆったり表示に切り替える", () => createViewModeButton(root).click());
     addItem("閉じる", () => {}, "xra-post-menu-close");
@@ -1435,7 +1522,7 @@
     settingsButton.appendChild(settingsIcon); settingsButton.addEventListener("click", openSettingsMenu);
     const homeButton = document.createElement("button"); homeButton.id = HOME_BUTTON_ID; homeButton.type = "button"; homeButton.setAttribute("aria-label", "ホームに戻る"); homeButton.dataset.active = String(activeSectionId === "following");
     homeButton.appendChild(createNavigationIcon("M3 10.5 12 3l9 7.5V21h-7v-6h-4v6H3V10.5Z"));
-    homeButton.addEventListener("click", () => { if (location.pathname === "/home") switchSection("following"); else navigateReader(`${location.origin}/home`); });
+    homeButton.addEventListener("click", () => switchSection("following"));
     dock.append(backButton, searchButton, bookmarksList, settingsButton, homeButton);
     document.body.appendChild(dock);
   };
@@ -1500,7 +1587,14 @@
     }
     renderToggleButton();
   };
-  const detectInitialSection = () => { if (isSearchPage()) { activeSectionId = "search"; return; } if (isProfilePage()) { activeSectionId = "profile"; return; } if (isNotificationsPage()) { activeSectionId = "notifications"; return; } const currentPath = location.pathname; const matched = CONFIG.sections.find(section => { if (!section.url) return false; try { return new URL(section.url).pathname === currentPath; } catch { return false; } }); activeSectionId = matched?.id || "following"; };
+  const detectInitialSection = () => {
+    const matched = editableSections.find(matchesSectionUrl);
+    if (matched) { activeSectionId = matched.id; return; }
+    if (isSearchPage()) { activeSectionId = "search"; return; }
+    if (isProfilePage()) { activeSectionId = "profile"; return; }
+    if (isNotificationsPage()) { activeSectionId = "notifications"; return; }
+    activeSectionId = CONFIG.sections.find(section => !editableSections.includes(section) && matchesSectionUrl(section))?.id || "following";
+  };
   
 
 // Step3: URLの投稿IDと一致するメイン投稿を赤枠で確認
@@ -2143,10 +2237,10 @@
 
     return Boolean(
       element.matches?.(
-        `#xra-navigation-dock, #${ROOT_ID}, #${DETAIL_ROOT_ID}, #${TOGGLE_ID}, #${BOOKMARKS_LIST_ID}, #${MEDIA_MODAL_ID}, #${VIEW_TOGGLE_ID}, #${SEARCH_BUTTON_ID}, #${BACK_BUTTON_ID}, #${POST_MENU_ID}, #${SETTINGS_BUTTON_ID}, #${HOME_BUTTON_ID}, #${SETTINGS_MENU_ID}`
+        `#xra-navigation-dock, #${ROOT_ID}, #${DETAIL_ROOT_ID}, #${TOGGLE_ID}, #${BOOKMARKS_LIST_ID}, #${MEDIA_MODAL_ID}, #${VIEW_TOGGLE_ID}, #${SEARCH_BUTTON_ID}, #${BACK_BUTTON_ID}, #${POST_MENU_ID}, #${SETTINGS_BUTTON_ID}, #${HOME_BUTTON_ID}, #${SETTINGS_MENU_ID}, #${SECTION_SETTINGS_ID}`
       ) ||
       element.closest?.(
-        `#xra-navigation-dock, #${ROOT_ID}, #${DETAIL_ROOT_ID}, #${TOGGLE_ID}, #${BOOKMARKS_LIST_ID}, #${MEDIA_MODAL_ID}, #${VIEW_TOGGLE_ID}, #${SEARCH_BUTTON_ID}, #${BACK_BUTTON_ID}, #${POST_MENU_ID}, #${SETTINGS_BUTTON_ID}, #${HOME_BUTTON_ID}, #${SETTINGS_MENU_ID}`
+        `#xra-navigation-dock, #${ROOT_ID}, #${DETAIL_ROOT_ID}, #${TOGGLE_ID}, #${BOOKMARKS_LIST_ID}, #${MEDIA_MODAL_ID}, #${VIEW_TOGGLE_ID}, #${SEARCH_BUTTON_ID}, #${BACK_BUTTON_ID}, #${POST_MENU_ID}, #${SETTINGS_BUTTON_ID}, #${HOME_BUTTON_ID}, #${SETTINGS_MENU_ID}, #${SECTION_SETTINGS_ID}`
       )
     );
   };

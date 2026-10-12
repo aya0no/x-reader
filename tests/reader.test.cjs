@@ -309,6 +309,29 @@ const check = async (name, run) => { await run(); console.log(`PASS ${name}`); p
 
   await page.goto("https://x.com/home");
   await page.waitForSelector(".xra-card");
+  await check("top tab names and destinations persist and can be reset", async () => {
+    await page.locator("#xra-settings-button").click();
+    await page.getByRole("menuitem", { name: "上部タブを編集" }).click();
+    const row = page.locator(".xra-section-editor-row").nth(2);
+    await row.locator("input").first().fill("映画");
+    await row.locator("input").last().fill("https://example.org/list");
+    await page.getByRole("button", { name: "保存", exact: true }).click();
+    assert.equal(await page.getByRole("alert").textContent(), "表示名とXのホーム・リスト・プロフィール・検索結果のURLを確認してください");
+    await row.locator("input").last().fill("https://x.com/i/lists/123456789");
+    await page.getByRole("button", { name: "保存", exact: true }).click();
+    await page.getByRole("tab", { name: "映画" }).click();
+    await page.waitForURL("https://x.com/i/lists/123456789");
+    await page.reload();
+    await page.waitForSelector(".xra-card");
+    assert.equal(await page.getByRole("tab", { name: "映画" }).getAttribute("aria-selected"), "true");
+    await page.locator("#xra-settings-button").click();
+    await page.getByRole("menuitem", { name: "上部タブを編集" }).click();
+    await page.getByRole("button", { name: "初期設定に戻す" }).click();
+    await page.getByRole("button", { name: "保存", exact: true }).click();
+    await page.locator("#xra-home-button").click();
+    await page.waitForURL("https://x.com/home");
+    assert.equal(await page.getByRole("tab", { name: "2", exact: true }).count(), 1);
+  });
   await page.locator("#xra-root").evaluate(node => { node.xraRestore = null; node.scrollTop = 0; node.dataset.viewMode = "compact"; });
   const output = process.env.XRA_QA_DIR;
   if (output) {
