@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         X Reader Accordion v7.0.4-step11-light
 // @namespace    local.x-reader-accordion
-// @version      7.0.4.14.10
+// @version      7.0.4.14.11
 // @description  検索、閲覧位置の復元、画像送り、返信・引用表示に対応した軽量なX Readerです。
 // @match        https://x.com/*
 // @match        https://twitter.com/*
@@ -109,11 +109,16 @@
       { id: "list2", label: "2", url: "https://x.com/i/lists/962319313385308166" },
       { id: "stocks", label: "株", url: "https://x.com/i/lists/1581596744466321408" },
       { id: "recipes", label: "レシピ", url: "https://x.com/i/lists/1718964496667156737" },
-      { id: "search", label: "検索", url: "https://x.com/explore" }
+      { id: "search", label: "検索", url: "https://x.com/explore" },
+      { id: "profile", label: "マイページ", url: "https://x.com/ngmkkrm" },
+      { id: "notifications", label: "通知", url: "https://x.com/notifications" },
+      { id: "bookmarks", label: "保存", url: "https://x.com/i/bookmarks" }
     ]
   };
 
-  const isReaderFeedPage = () => isSearchPage() || CONFIG.sections.some(section => section.id !== "search" && new URL(section.url).pathname === location.pathname);
+  const isProfilePage = () => /^\/ngmkkrm(?:\/(?:with_replies|media|likes|highlights))?\/?$/.test(location.pathname);
+  const isNotificationsPage = () => location.pathname === "/notifications" || location.pathname.startsWith("/notifications/");
+  const isReaderFeedPage = () => isSearchPage() || isProfilePage() || isNotificationsPage() || CONFIG.sections.some(section => section.id !== "search" && new URL(section.url).pathname === location.pathname);
 
   let activeSectionId = "following";
   let renderTimer = null;
@@ -153,6 +158,10 @@
     .xra-trend-item:active { background: #f3f3f1; }
     .xra-trend-category, .xra-trend-volume { color: #707070; font-size: 11px; line-height: 1.35; }
     .xra-trend-title { margin: 3px 0; font-size: 14px; font-weight: 650; line-height: 1.4; }
+    .xra-notification-item { display: block; width: calc(100% - 20px); margin: 0 10px 8px; padding: 15px 16px; border: 1px solid #dededb; border-radius: 13px; background: #fff; color: #171717; font: inherit; font-size: 13px; line-height: 1.55; text-align: left; white-space: normal; overflow-wrap: anywhere; }
+    .xra-notification-item:active { background: #f3f3f1; }
+    #${ROOT_ID}[data-view-mode="comfortable"] .xra-notification-item { width: 100%; margin: 0 0 8px; padding: 18px 20px; border: 0; border-bottom: 1px solid #dcdcd9; border-radius: 0; font-size: 15px; }
+
     .xra-context { margin-bottom: 5px; color: #777; font-size: 10.5px; }
     .xra-list { padding: 8px 0 76px; }
     .xra-card { position: relative; display: grid; grid-template-columns: minmax(0,1fr); gap: 8px; margin: 0 10px 8px; padding: 13px 14px; border: 1px solid #dededb; border-radius: 13px; background: #fff; cursor: pointer; -webkit-tap-highlight-color: transparent; }
@@ -1162,6 +1171,40 @@
     });
   };
 
+  const renderNotifications = list => {
+    const scope = document.querySelector('[data-testid="primaryColumn"]') || document.querySelector("main");
+    const cells = Array.from(scope?.querySelectorAll('[data-testid="cellInnerDiv"], [data-testid="notification"]') || [])
+      .filter(node => !node.closest(`#${ROOT_ID}`) && !node.parentElement?.closest('[data-testid="cellInnerDiv"], [data-testid="notification"]'));
+    const items = cells.map(cell => {
+      const text = (cell.innerText || cell.textContent || "").replace(/\s+/g, " ").trim().slice(0, 480);
+      const statusLink = cell.querySelector('a[href*="/status/"]');
+      const link = statusLink || cell.querySelector('a[href]');
+      const href = link?.getAttribute("href") || "";
+      return { cell, text, link, href };
+    }).filter(item => item.text.length > 1 && !/^(?:通知|すべて|認証済み|メンション|Notifications|All|Verified|Mentions)$/.test(item.text));
+    const expired = !items.length && Date.now() - (document.getElementById(ROOT_ID)?.xraCreatedAt || Date.now()) > 4500;
+    const signature = JSON.stringify(items.map(item => [item.text, item.href])) + String(expired);
+    if (list.dataset.notificationSignature === signature) return;
+    list.dataset.notificationSignature = signature;
+    list.replaceChildren();
+    if (!items.length) {
+      const message = document.createElement("div"); message.className = "xra-message";
+      message.textContent = expired ? "通知を表示できませんでした。右下のボタンから通常表示を確認できます" : "通知を読み込んでいます";
+      list.appendChild(message);
+      return;
+    }
+    items.forEach((item, index) => {
+      const card = document.createElement("button"); card.type = "button"; card.className = "xra-notification-item";
+      card.setAttribute(CARD_ATTR, `notification:${index}:${item.href}`);
+      card.textContent = item.text;
+      card.addEventListener("click", () => {
+        if (item.link?.isConnected) item.link.click();
+        else if (item.cell.isConnected) item.cell.click();
+      });
+      list.appendChild(card);
+    });
+  };
+
   const renderCurrentFeed = () => {
     const section = currentSection();
     const list = document.querySelector(`.xra-section[data-section-id="${activeSectionId}"] .xra-list`);
@@ -1169,13 +1212,15 @@
     if (!section.url) { list.innerHTML = '<div class="xra-message">このリストのURLが未設定です。<br>スクリプト上部のCONFIG.sectionsへXリストURLを入力してください。</div>'; return; }
     const searchLanding = section.id === "search" && !currentSearchQuery();
     if (searchLanding) { renderExploreTopics(list); tryRestorePosition(document.getElementById(ROOT_ID)); return; }
+    if (section.id === "notifications") { renderNotifications(list); tryRestorePosition(document.getElementById(ROOT_ID)); return; }
     const existing = new Set(Array.from(list.querySelectorAll(`[${CARD_ATTR}]`)).map(card => card.getAttribute(CARD_ATTR)));
     let added = 0;
-    document.querySelectorAll("article").forEach(article => { if (article.closest(`#${ROOT_ID}`)) return; const key = getPostKey(article); if (!key || existing.has(key)) return; const card = createCard(article, { allowReplies: section.id === "search" }); if (!card) return; list.appendChild(card); existing.add(key); added += 1; });
+    document.querySelectorAll("article").forEach(article => { if (article.closest(`#${ROOT_ID}`)) return; const key = getPostKey(article); if (!key || existing.has(key)) return; const card = createCard(article, { allowReplies: ["search", "profile"].includes(section.id) }); if (!card) return; list.appendChild(card); existing.add(key); added += 1; });
     if (!list.querySelector(".xra-card") && !list.querySelector(".xra-message")) list.innerHTML = '<div class="xra-message">投稿を読み込んでいます</div>';
     if (added > 0) list.querySelector(".xra-message")?.remove();
     const root = document.getElementById(ROOT_ID);
     if (section.id === "search" && currentSearchQuery() && !list.querySelector(".xra-card") && root?.xraCreatedAt && Date.now() - root.xraCreatedAt > 4500) list.innerHTML = '<div class="xra-message">検索結果が見つかりません</div>';
+    if (["profile", "bookmarks"].includes(section.id) && !list.querySelector(".xra-card") && root?.xraCreatedAt && Date.now() - root.xraCreatedAt > 4500) list.innerHTML = '<div class="xra-message">投稿が見つかりません</div>';
     tryRestorePosition(root);
   };
 
@@ -1240,7 +1285,7 @@
     const isInteractiveTarget = target => target instanceof Element && Boolean(target.closest("button, a, input, textarea, select, [contenteditable='true']"));
 
     root.addEventListener("touchstart", event => {
-      if (activeSectionId === "search" || event.touches.length !== 1 || isInteractiveTarget(event.target)) { tracking = false; return; }
+      if (["search", "profile", "notifications", "bookmarks"].includes(activeSectionId) || event.touches.length !== 1 || isInteractiveTarget(event.target)) { tracking = false; return; }
       const touch = event.touches[0];
       if (touch.clientX <= SWIPE_EDGE_GUARD || touch.clientX >= window.innerWidth - SWIPE_EDGE_GUARD) { tracking = false; return; }
       startX = touch.clientX;
@@ -1257,9 +1302,10 @@
       const deltaY = touch.clientY - startY;
       if (Date.now() - startTime > SWIPE_MAX_DURATION || Math.abs(deltaX) < SWIPE_MIN_DISTANCE || Math.abs(deltaX) <= Math.abs(deltaY) * 1.25) return;
       suppressClickUntil = Date.now() + 450;
-      const currentIndex = CONFIG.sections.findIndex(section => section.id === activeSectionId);
+      const swipeSections = CONFIG.sections.filter(section => !["search", "profile", "notifications", "bookmarks"].includes(section.id));
+      const currentIndex = swipeSections.findIndex(section => section.id === activeSectionId);
       const nextIndex = deltaX < 0 ? currentIndex + 1 : currentIndex - 1;
-      const nextSection = CONFIG.sections[nextIndex];
+      const nextSection = swipeSections[nextIndex];
       if (nextSection) switchSection(nextSection.id);
     }, { passive: true });
 
@@ -1281,8 +1327,10 @@
       catch { return false; }
     });
     if (!link) { location.assign(target.href); return; }
+    const originalPath = location.pathname;
     link.click();
-    setTimeout(() => { if (location.pathname.replace(/\/$/, "") !== target.pathname.replace(/\/$/, "")) location.assign(target.href); }, 1400);
+    if (location.pathname !== originalPath) return;
+    setTimeout(() => { if (location.pathname === originalPath) location.assign(target.href); }, 1400);
   };
   const openSettingsMenu = () => {
     if (document.getElementById(SETTINGS_MENU_ID)) return;
@@ -1305,7 +1353,7 @@
     const header = document.createElement("header"); header.className = "xra-header";
     const tabs = document.createElement("nav"); tabs.className = "xra-tabs"; tabs.setAttribute("role", "tablist"); tabs.setAttribute("aria-label", "リストを切り替える");
     const sections = document.createElement("main"); sections.className = "xra-sections";
-    CONFIG.sections.forEach(section => { const elements = createSection(section); if (section.id !== "search") tabs.appendChild(elements.tab); sections.appendChild(elements.panel); });
+    CONFIG.sections.forEach(section => { const elements = createSection(section); if (["profile", "notifications", "bookmarks"].includes(section.id)) { if (section.id === activeSectionId) tabs.prepend(elements.tab); } else if (section.id !== "search") tabs.appendChild(elements.tab); sections.appendChild(elements.panel); });
     header.appendChild(tabs);
 
     const bookmarksList = document.createElement("button");
@@ -1438,7 +1486,7 @@
     }
     renderToggleButton();
   };
-  const detectInitialSection = () => { if (isSearchPage()) { activeSectionId = "search"; return; } const currentPath = location.pathname; const matched = CONFIG.sections.find(section => { if (!section.url) return false; try { return new URL(section.url).pathname === currentPath; } catch { return false; } }); activeSectionId = matched?.id || "following"; };
+  const detectInitialSection = () => { if (isSearchPage()) { activeSectionId = "search"; return; } if (isProfilePage()) { activeSectionId = "profile"; return; } if (isNotificationsPage()) { activeSectionId = "notifications"; return; } const currentPath = location.pathname; const matched = CONFIG.sections.find(section => { if (!section.url) return false; try { return new URL(section.url).pathname === currentPath; } catch { return false; } }); activeSectionId = matched?.id || "following"; };
   
 
 // Step3: URLの投稿IDと一致するメイン投稿を赤枠で確認
