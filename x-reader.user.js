@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         X Reader Accordion v7.0.4-step11-light
 // @namespace    local.x-reader-accordion
-// @version      7.0.4.14.5
+// @version      7.0.4.14.6
 // @description  検索、閲覧位置の復元、画像送り、返信・引用表示に対応した軽量なX Readerです。
 // @match        https://x.com/*
 // @match        https://twitter.com/*
@@ -28,6 +28,8 @@
   const SEARCH_BUTTON_ID = "xra-search-button";
   const BACK_BUTTON_ID = "xra-back-button";
   const POST_MENU_ID = "xra-post-menu";
+  const SETTINGS_BUTTON_ID = "xra-settings-button";
+  const SETTINGS_MENU_ID = "xra-settings-menu";
   const VIEW_MODE_KEY = "xra-feed-view-mode";
   const SWIPE_MIN_DISTANCE = 58;
   const SWIPE_EDGE_GUARD = 24;
@@ -110,6 +112,8 @@
       { id: "search", label: "検索", url: "https://x.com/explore" }
     ]
   };
+
+  const isReaderFeedPage = () => isSearchPage() || CONFIG.sections.some(section => section.id !== "search" && new URL(section.url).pathname === location.pathname);
 
   let activeSectionId = "following";
   let renderTimer = null;
@@ -196,7 +200,7 @@
     .xra-detail-reply { cursor: pointer; }
     .xra-message { padding: 22px 14px; color: #777; font-size: 11px; line-height: 1.6; text-align: center; }
     .xra-card, .xra-detail-sheet, .xra-detail-reply { -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; }
-    #${POST_MENU_ID} { position: fixed; inset: 0; z-index: 2147483647; display: flex; align-items: flex-end; justify-content: center; padding: 12px 12px calc(76px + env(safe-area-inset-bottom, 0px)); background: rgba(0,0,0,.22); }
+    #${POST_MENU_ID}, #${SETTINGS_MENU_ID} { position: fixed; inset: 0; z-index: 2147483647; display: flex; align-items: flex-end; justify-content: center; padding: 12px 12px calc(76px + env(safe-area-inset-bottom, 0px)); background: rgba(0,0,0,.22); }
     .xra-post-menu-panel { width: min(100%, 440px); padding: 7px; border: 1px solid #d5d5d2; border-radius: 17px; background: #fff; box-shadow: 0 12px 36px rgba(0,0,0,.16); }
     .xra-post-menu-action { display: block; width: 100%; min-height: 45px; padding: 9px 13px; border: 0; border-radius: 10px; background: transparent; color: #171717; font: inherit; font-size: 13px; text-align: left; }
     .xra-post-menu-action:active, .xra-post-menu-action:focus-visible { background: #f2f2f0; }
@@ -826,8 +830,9 @@
     html.xra-detail-page #${BOOKMARKS_LIST_ID},
     html.xra-detail-page #${VIEW_TOGGLE_ID},
     html.xra-detail-page #${SEARCH_BUTTON_ID},
-    html.xra-detail-page #${BACK_BUTTON_ID} { display: none !important; }
-    #${TOGGLE_ID}, #${BOOKMARKS_LIST_ID}, #${VIEW_TOGGLE_ID}, #${SEARCH_BUTTON_ID}, #${BACK_BUTTON_ID} {
+    html.xra-detail-page #${BACK_BUTTON_ID},
+    html.xra-detail-page #${SETTINGS_BUTTON_ID} { display: none !important; }
+    #${TOGGLE_ID}, #${BOOKMARKS_LIST_ID}, #${VIEW_TOGGLE_ID}, #${SEARCH_BUTTON_ID}, #${BACK_BUTTON_ID}, #${SETTINGS_BUTTON_ID} {
       bottom: calc(16px + env(safe-area-inset-bottom, 0px));
       width: 44px; height: 44px;
       touch-action: manipulation;
@@ -835,7 +840,7 @@
     #${TOGGLE_ID} { right: 12px; }
     #${BOOKMARKS_LIST_ID} { right: 64px; }
     #${VIEW_TOGGLE_ID} { right: 116px; }
-    #${SEARCH_BUTTON_ID}, #${BACK_BUTTON_ID} {
+    #${SEARCH_BUTTON_ID}, #${BACK_BUTTON_ID}, #${SETTINGS_BUTTON_ID} {
       position: fixed; z-index: 2147483646;
       display: flex; align-items: center; justify-content: center;
       padding: 0; border: 1px solid #bdbdbd; border-radius: 50%;
@@ -845,13 +850,23 @@
     }
     #${SEARCH_BUTTON_ID} { right: 168px; }
     #${BACK_BUTTON_ID} { left: 12px; }
+    #${SETTINGS_BUTTON_ID} { left: 64px; }
     #${SEARCH_BUTTON_ID}[data-active="true"] { border-color: #171717; background: #171717; color: #fff; }
-    #${SEARCH_BUTTON_ID} svg, #${BACK_BUTTON_ID} svg {
+    #${SEARCH_BUTTON_ID} svg, #${BACK_BUTTON_ID} svg, #${SETTINGS_BUTTON_ID} svg {
       display: block; width: 20px; height: 20px;
       fill: none; stroke: currentColor; stroke-width: 1.8;
       stroke-linecap: round; stroke-linejoin: round;
     }
-    #${SEARCH_BUTTON_ID}:active, #${BACK_BUTTON_ID}:active { transform: scale(.96); }
+    #${SEARCH_BUTTON_ID}:active, #${BACK_BUTTON_ID}:active, #${SETTINGS_BUTTON_ID}:active { transform: scale(.96); }
+    @media (max-width: 350px) {
+      #${TOGGLE_ID}, #${BOOKMARKS_LIST_ID}, #${VIEW_TOGGLE_ID}, #${SEARCH_BUTTON_ID}, #${BACK_BUTTON_ID}, #${SETTINGS_BUTTON_ID} { width: 40px; height: 40px; }
+      #${BACK_BUTTON_ID} { left: 10px; }
+      #${SETTINGS_BUTTON_ID} { left: 58px; }
+      #${SEARCH_BUTTON_ID} { right: 160px; }
+      #${VIEW_TOGGLE_ID} { right: 112px; }
+      #${BOOKMARKS_LIST_ID} { right: 64px; }
+      #${TOGGLE_ID} { right: 16px; }
+    }
   `;
 
   const addStyle = () => { if (!document.getElementById(STYLE_ID)) { const style = document.createElement("style"); style.id = STYLE_ID; style.textContent = css; document.documentElement.appendChild(style); } };
@@ -1190,6 +1205,37 @@
     }, true);
   };
 
+  const findOwnProfileUrl = () => {
+    const selectors = ['a[data-testid="AppTabBar_Profile_Link"][href]', 'a[data-testid="SideNav_Profile_Link"][href]', 'nav a[aria-label="プロフィール"][href]', 'nav a[aria-label="Profile"][href]'];
+    for (const selector of selectors) {
+      const link = document.querySelector(selector);
+      if (!link) continue;
+      const url = new URL(link.getAttribute("href"), location.origin);
+      if (url.origin === location.origin && /^\/[A-Za-z0-9_]{1,15}\/?$/.test(url.pathname)) return `${location.origin}${url.pathname}`;
+    }
+    const switcher = document.querySelector('[data-testid="SideNav_AccountSwitcher_Button"]');
+    const handle = switcher?.textContent?.match(/@([A-Za-z0-9_]{1,15})/)?.[1];
+    return handle ? `${location.origin}/${handle}` : "";
+  };
+  const openSettingsMenu = () => {
+    if (document.getElementById(SETTINGS_MENU_ID)) return;
+    const modal = document.createElement("div"); modal.id = SETTINGS_MENU_ID;
+    const panel = document.createElement("div"); panel.className = "xra-post-menu-panel"; panel.setAttribute("role", "menu"); panel.setAttribute("aria-label", "設定");
+    const onKeyDown = event => { if (event.key === "Escape") close(); };
+    const close = () => { document.removeEventListener("keydown", onKeyDown); modal.remove(); };
+    const addItem = (label, action, className = "") => { const button = document.createElement("button"); button.type = "button"; button.className = `xra-post-menu-action ${className}`.trim(); button.setAttribute("role", "menuitem"); button.textContent = label; button.addEventListener("click", () => { close(); action(); }); panel.appendChild(button); };
+    addItem("マイページ", () => {
+      const url = findOwnProfileUrl();
+      if (url) navigateReader(url);
+      else { saveCurrentPosition(); document.getElementById(ROOT_ID)?.remove(); renderToggleButton(); document.querySelector('[data-testid="AppTabBar_Profile_Link"], [data-testid="SideNav_Profile_Link"]')?.click(); }
+    });
+    addItem("通知", () => navigateReader(`${location.origin}/notifications`));
+    addItem("閉じる", () => {}, "xra-post-menu-close");
+    modal.appendChild(panel); modal.addEventListener("click", event => { if (event.target === modal) close(); });
+    document.body.appendChild(modal); document.addEventListener("keydown", onKeyDown);
+    panel.querySelector("button")?.focus({ preventScroll: true });
+  };
+
   const createRoot = () => {
     if (document.getElementById(ROOT_ID)) return;
     const root = document.createElement("div"); root.id = ROOT_ID; root.dataset.viewMode = getSavedViewMode(); root.xraCreatedAt = Date.now();
@@ -1215,10 +1261,13 @@
     backButton.addEventListener("click", () => { saveCurrentPosition(); if (history.length > 1) history.back(); else navigateReader(`${location.origin}/home`); });
     const searchButton = document.createElement("button"); searchButton.id = SEARCH_BUTTON_ID; searchButton.type = "button"; searchButton.setAttribute("aria-label", "検索を開く"); searchButton.dataset.active = String(activeSectionId === "search"); searchButton.appendChild(createNavigationIcon("M10.5 18a7.5 7.5 0 1 0 0-15 7.5 7.5 0 0 0 0 15Zm5.5-2 5 5"));
     searchButton.addEventListener("click", () => { if (activeSectionId === "search") root.querySelector(".xra-search-input")?.focus(); else navigateReader(`${location.origin}/explore`); });
+    const settingsButton = document.createElement("button"); settingsButton.id = SETTINGS_BUTTON_ID; settingsButton.type = "button"; settingsButton.setAttribute("aria-label", "設定を開く");
+    const settingsIcon = createNavigationIcon("M10 2h4l.5 2.1 1.7.7 1.9-1 2 3.5-1.5 1.4.2 1.8 1.5 1.4-2 3.5-1.9-1-1.7.7L14 22h-4l-.5-2.1-1.7-.7-1.9 1-2-3.5 1.5-1.4-.2-1.8-1.5-1.4 2-3.5 1.9 1 1.7-.7L10 2Zm2 7a3 3 0 1 0 0 6 3 3 0 0 0 0-6Z");
+    settingsButton.appendChild(settingsIcon); settingsButton.addEventListener("click", openSettingsMenu);
     const viewModeButton = createViewModeButton(root);
     root.addEventListener("scroll", () => preloadNativeFeed(root), { passive: true });
     addListSwipeNavigation(root);
-    root.append(header, sections, backButton, searchButton, viewModeButton, bookmarksList); document.body.appendChild(root);
+    root.append(header, sections, backButton, settingsButton, searchButton, viewModeButton, bookmarksList); document.body.appendChild(root);
     trackReadingPosition(root);
     renderCurrentFeed(); setTimeout(renderCurrentFeed, 400); setTimeout(renderCurrentFeed, 1000); setTimeout(renderCurrentFeed, 1800); setTimeout(renderCurrentFeed, 5000);
   };
@@ -1295,7 +1344,8 @@
 
     const readerIsOpen = Boolean(document.getElementById(ROOT_ID));
     const mode = readerIsOpen ? "normal" : "reader";
-    const label = readerIsOpen ? "通常表示に戻す" : "簡素表示に切り替える";
+    const utilityPage = !isDetailPage() && !isReaderFeedPage();
+    const label = utilityPage ? "X Readerのホームに戻る" : readerIsOpen ? "通常表示に戻す" : "簡素表示に切り替える";
 
     // 状態が変わった時だけSVGを書き換える。
     if (button.dataset.mode !== mode || !button.firstElementChild) {
@@ -1306,12 +1356,11 @@
     if (button.getAttribute("aria-label") !== label) {
       button.setAttribute("aria-label", label);
     }
-    if (button.title !== (readerIsOpen ? "通常表示" : "簡素表示")) {
-      button.title = readerIsOpen ? "通常表示" : "簡素表示";
-    }
+    const title = utilityPage ? "ホームに戻る" : readerIsOpen ? "通常表示" : "簡素表示";
+    if (button.title !== title) button.title = title;
   };
 
-  const enableReader = () => { writeSetting("xra-enabled", "true"); if (isDetailPage()) { closeFeedMediaModal(); document.getElementById(ROOT_ID)?.remove(); renderToggleButton(); return; } createRoot(); renderToggleButton(); };
+  const enableReader = () => { writeSetting("xra-enabled", "true"); if (isDetailPage()) { closeFeedMediaModal(); document.getElementById(ROOT_ID)?.remove(); renderToggleButton(); return; } if (!isReaderFeedPage()) { navigateReader(`${location.origin}/home`); return; } createRoot(); renderToggleButton(); };
   const disableReader = () => { saveCurrentPosition(); writeSetting("xra-enabled", "false"); closeFeedMediaModal(); document.getElementById(ROOT_ID)?.remove(); renderToggleButton(); };
   const addToggle = () => {
     let button = document.getElementById(TOGGLE_ID);
@@ -1932,6 +1981,13 @@
     }
 
     clearDetailSimplification();
+    if (!isReaderFeedPage()) {
+      saveReadingPosition(document.getElementById(ROOT_ID));
+      closeFeedMediaModal();
+      document.getElementById(ROOT_ID)?.remove();
+      renderToggleButton();
+      return;
+    }
     const feed = document.getElementById(ROOT_ID);
     if (feed && feed.xraPath !== currentPageKey()) { saveReadingPosition(feed); feed.remove(); }
     document.querySelector("article.xra-detail-main")?.classList.remove("xra-detail-main");
@@ -1949,10 +2005,10 @@
 
     return Boolean(
       element.matches?.(
-        `#${ROOT_ID}, #${DETAIL_ROOT_ID}, #${TOGGLE_ID}, #${BOOKMARKS_LIST_ID}, #${MEDIA_MODAL_ID}, #${VIEW_TOGGLE_ID}, #${SEARCH_BUTTON_ID}, #${BACK_BUTTON_ID}, #${POST_MENU_ID}`
+        `#${ROOT_ID}, #${DETAIL_ROOT_ID}, #${TOGGLE_ID}, #${BOOKMARKS_LIST_ID}, #${MEDIA_MODAL_ID}, #${VIEW_TOGGLE_ID}, #${SEARCH_BUTTON_ID}, #${BACK_BUTTON_ID}, #${POST_MENU_ID}, #${SETTINGS_BUTTON_ID}, #${SETTINGS_MENU_ID}`
       ) ||
       element.closest?.(
-        `#${ROOT_ID}, #${DETAIL_ROOT_ID}, #${TOGGLE_ID}, #${BOOKMARKS_LIST_ID}, #${MEDIA_MODAL_ID}, #${VIEW_TOGGLE_ID}, #${SEARCH_BUTTON_ID}, #${BACK_BUTTON_ID}, #${POST_MENU_ID}`
+        `#${ROOT_ID}, #${DETAIL_ROOT_ID}, #${TOGGLE_ID}, #${BOOKMARKS_LIST_ID}, #${MEDIA_MODAL_ID}, #${VIEW_TOGGLE_ID}, #${SEARCH_BUTTON_ID}, #${BACK_BUTTON_ID}, #${POST_MENU_ID}, #${SETTINGS_BUTTON_ID}, #${SETTINGS_MENU_ID}`
       )
     );
   };

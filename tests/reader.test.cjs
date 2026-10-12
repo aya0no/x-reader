@@ -10,7 +10,7 @@ const post = (id, options = {}) => `<article data-native="${id}">${options.repos
 const homePosts = Array.from({ length: 30 }, (_, i) => post(String(1000 - i), { text: i === 0 ? "おすすめのレシピも消さずに表示" : undefined, images: i === 0 ? 3 : 0, repost: i === 1 })).join("");
 const main = post("5000", { text: '本文と<a href="https://example.org/story">関連リンク</a>', quote: quote(), images: 2 });
 const detailPosts = post("4900", { quote: quote("5000", "別の投稿がこの投稿を引用しているケース", 0) }) + main + post("5001", { quote: quote("9901", "返信の引用", 2) }) + post("5002", { images: 2 });
-const shell = body => `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><style>*{box-sizing:border-box}html,body{margin:0;width:100%;overflow-x:hidden}main>section>article{min-height:340px;padding:16px;overflow-wrap:anywhere}img{max-width:100%;object-fit:cover}</style></head><body><main data-testid="primaryColumn"><section id="native-timeline">${body}</section></main></body></html>`;
+const shell = body => `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><style>*{box-sizing:border-box}html,body{margin:0;width:100%;overflow-x:hidden}main>section>article{min-height:340px;padding:16px;overflow-wrap:anywhere}img{max-width:100%;object-fit:cover}</style></head><body><nav><a data-testid="AppTabBar_Profile_Link" href="/reader">プロフィール</a></nav><main data-testid="primaryColumn"><section id="native-timeline">${body}</section></main></body></html>`;
 const errors = [];
 let activePage;
 let passed = 0;
@@ -55,10 +55,14 @@ const check = async (name, run) => { await run(); console.log(`PASS ${name}`); p
   });
 
   await check("search button and floating button spacing", async () => {
-    const ids = ["#xra-back-button", "#xra-search-button", "#xra-view-toggle", "#xra-bookmarks-list", "#xra-toggle"];
+    const ids = ["#xra-back-button", "#xra-settings-button", "#xra-search-button", "#xra-view-toggle", "#xra-bookmarks-list", "#xra-toggle"];
     const boxes = await Promise.all(ids.map(id => page.locator(id).boundingBox()));
     assert.ok(boxes.every(Boolean));
     for (let i = 0; i < boxes.length; i++) for (let j = i + 1; j < boxes.length; j++) assert.ok(boxes[i].x + boxes[i].width <= boxes[j].x || boxes[j].x + boxes[j].width <= boxes[i].x);
+    await page.setViewportSize({ width: 320, height: 812 });
+    const narrowBoxes = await Promise.all(ids.map(id => page.locator(id).boundingBox()));
+    for (let i = 0; i < narrowBoxes.length; i++) for (let j = i + 1; j < narrowBoxes.length; j++) assert.ok(narrowBoxes[i].x + narrowBoxes[i].width <= narrowBoxes[j].x || narrowBoxes[j].x + narrowBoxes[j].width <= narrowBoxes[i].x);
+    await page.setViewportSize({ width: 375, height: 812 });
     await page.locator("#xra-search-button").click();
     await page.waitForURL("https://x.com/explore");
     assert.equal(await page.locator(".xra-search-input").count(), 1);
@@ -67,6 +71,23 @@ const check = async (name, run) => { await run(); console.log(`PASS ${name}`); p
     assert.equal(await page.locator(".xra-search-input").evaluate(node => document.activeElement === node), true);
     await page.locator("#xra-back-button").click();
     await page.waitForURL("https://x.com/home");
+  });
+
+  await check("settings opens native notifications and own profile", async () => {
+    await page.locator("#xra-settings-button").click();
+    await page.getByRole("menuitem", { name: "通知" }).click();
+    await page.waitForURL("https://x.com/notifications");
+    assert.equal(await page.locator("#xra-root").count(), 0);
+    await page.getByRole("button", { name: "X Readerのホームに戻る" }).click();
+    await page.waitForURL("https://x.com/home");
+    await page.waitForSelector("#xra-root");
+    await page.locator("#xra-settings-button").click();
+    await page.getByRole("menuitem", { name: "マイページ" }).click();
+    await page.waitForURL("https://x.com/reader");
+    assert.equal(await page.locator("#xra-root").count(), 0);
+    await page.getByRole("button", { name: "X Readerのホームに戻る" }).click();
+    await page.waitForURL("https://x.com/home");
+    await page.waitForSelector(".xra-card");
   });
 
   await check("multi-image gallery, keyboard, touch and focus", async () => {
