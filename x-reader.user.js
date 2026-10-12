@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         X Reader Accordion v7.0.4-step11-light
 // @namespace    local.x-reader-accordion
-// @version      7.0.4.14.17
+// @version      7.0.4.14.18
 // @description  検索、閲覧位置の復元、画像送り、返信・引用表示に対応した軽量なX Readerです。
 // @match        https://x.com/*
 // @match        https://twitter.com/*
@@ -64,8 +64,42 @@
     const anchor = readingItems(root).find(node => node.getBoundingClientRect().bottom > top);
     return { top: root.scrollTop, nativeTop: window.scrollY, anchor: readingKey(anchor), offset: anchor ? anchor.getBoundingClientRect().top - top : 0, savedAt: Date.now() };
   };
-  const saveReadingPosition = root => { if (root?.isConnected && root.xraPath && !root.xraRestore) storePosition(root.xraPath, captureReadingPosition(root)); };
+  const saveReadingPosition = root => { if (root?.isConnected && root.xraPath === currentPageKey() && !root.xraRestore) storePosition(root.xraPath, captureReadingPosition(root)); };
   const saveCurrentPosition = () => { saveReadingPosition(document.getElementById(ROOT_ID)); saveReadingPosition(document.getElementById(DETAIL_ROOT_ID)); };
+  const cancelReaderActivity = () => {
+    readerGeneration += 1;
+    clearTimeout(renderTimer); renderTimer = null;
+    preloadLocked = false; detailPreloadLocked = false;
+    [ROOT_ID, DETAIL_ROOT_ID].forEach(id => {
+      const root = document.getElementById(id);
+      if (!root) return;
+      root.xraRestore = null;
+      clearTimeout(root.xraRestoreTimer); clearTimeout(root.xraSaveTimer);
+      root.xraLoadTimers?.forEach(clearTimeout);
+      root.xraLoadTimers = [];
+    });
+  };
+  const beginReaderNavigation = () => {
+    if (navigationPending && Date.now() - navigationPending.started < 1500) return false;
+    saveCurrentPosition();
+    cancelReaderActivity();
+    const attempt = { started: Date.now(), generation: readerGeneration };
+    navigationPending = attempt;
+    setTimeout(() => {
+      if (navigationPending !== attempt) return;
+      navigationPending = null;
+      syncReaderRoute();
+      if (isDetailPage() && readSetting("xra-enabled") !== "false") simplifyDetailPage();
+      else renderCurrentFeed();
+    }, 1500);
+    return true;
+  };
+  const isCurrentReaderRoot = root => Boolean(root?.isConnected && root.xraPath === currentPageKey() && !navigationPending && readSetting("xra-enabled") !== "false");
+  const goBackReader = () => {
+    if (!beginReaderNavigation()) return;
+    if (history.length > 1) history.back();
+    else location.assign(`${location.origin}/home`);
+  };
   const findNativeLink = (url, selectors = 'a[href]') => {
     const target = new URL(url, location.origin);
     return Array.from(document.querySelectorAll(selectors)).find(link => {
@@ -76,21 +110,28 @@
       } catch { return false; }
     });
   };
-  const navigateReader = url => {
-    saveCurrentPosition();
+  const navigateReader = (url, selectors) => {
     const target = new URL(url, location.origin);
     if (target.href === location.href) return;
-    const link = findNativeLink(target.href);
+    if (!beginReaderNavigation()) return;
+    const link = findNativeLink(target.href, selectors);
     if (link) link.click();
     else location.assign(target.href);
   };
   const tryRestorePosition = root => {
     const pending = root?.xraRestore;
-    if (!pending || !root.isConnected || root.xraPath !== currentPageKey()) return;
+    if (!pending || !isCurrentReaderRoot(root)) return;
+    if (Date.now() - pending.started > 8000) { root.xraRestore = null; clearTimeout(root.xraRestoreTimer); return; }
+    const hasContent = root.querySelector(root.id === ROOT_ID ? '.xra-card, .xra-trend-item, .xra-notification-item' : '.xra-detail-sheet');
+    if (!hasContent) {
+      clearTimeout(root.xraRestoreTimer);
+      root.xraRestoreTimer = setTimeout(() => tryRestorePosition(root), 400);
+      return;
+    }
     const saved = pending.saved;
     const anchor = readingItems(root).find(node => readingKey(node) === saved.anchor);
     const enough = root.scrollHeight - root.clientHeight >= saved.top;
-    if (anchor || (!saved.anchor && enough) || Date.now() - pending.started > 8000) {
+    if (anchor || (!saved.anchor && enough)) {
       root.scrollTop = anchor ? root.scrollTop + anchor.getBoundingClientRect().top - root.getBoundingClientRect().top - 48 - saved.offset : Math.min(saved.top, root.scrollHeight - root.clientHeight);
       root.xraRestore = null;
       clearTimeout(root.xraRestoreTimer);
@@ -98,7 +139,8 @@
     }
     if (Date.now() > pending.nextAttempt && pending.attempts < 8) {
       pending.attempts += 1; pending.nextAttempt = Date.now() + 750;
-      window.scrollBy(0, Math.max(480, window.innerHeight * .8));
+      if (pending.attempts === 1 && Number.isFinite(saved.nativeTop)) window.scrollTo(0, saved.nativeTop);
+      else window.scrollBy(0, Math.max(480, window.innerHeight * .8));
     }
     clearTimeout(root.xraRestoreTimer);
     root.xraRestoreTimer = setTimeout(() => tryRestorePosition(root), 400);
@@ -108,13 +150,12 @@
     const saved = readingPositions[root.xraPath];
     if (saved && Number.isFinite(saved.top) && saved.top > 20 && Date.now() - saved.savedAt < 21600000) {
       root.xraRestore = { saved, started: Date.now(), nextAttempt: Date.now() + 750, attempts: 0 };
-      window.scrollTo(0, Number.isFinite(saved.nativeTop) ? saved.nativeTop : 0);
     }
     const cancelRestore = () => { root.xraRestore = null; clearTimeout(root.xraRestoreTimer); };
     root.addEventListener("touchstart", cancelRestore, { passive: true });
     root.addEventListener("wheel", cancelRestore, { passive: true });
     root.addEventListener("keydown", event => { if (["ArrowDown", "ArrowUp", "PageDown", "PageUp", "Home", "End"].includes(event.key)) cancelRestore(); });
-    root.addEventListener("scroll", () => { clearTimeout(root.xraSaveTimer); root.xraSaveTimer = setTimeout(() => saveReadingPosition(root), 200); }, { passive: true });
+    root.addEventListener("scroll", () => { clearTimeout(root.xraSaveTimer); root.xraSaveTimer = setTimeout(() => { if (isCurrentReaderRoot(root)) saveReadingPosition(root); }, 200); }, { passive: true });
   };
 
   const CONFIG = {
@@ -174,6 +215,8 @@
   let preloadLocked = false;
   let detailPreloadLocked = false;
   let detailState = null;
+  let readerGeneration = 0;
+  let navigationPending = null;
 
   const css = `
     #${ROOT_ID} { position: fixed; inset: 0; z-index: 2147483000; overflow-y: auto; background: #fbfbfa; color: #171717; font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Yu Gothic UI", "Yu Gothic", sans-serif; -webkit-overflow-scrolling: touch; }
@@ -931,7 +974,9 @@
       box-shadow: 0 3px 16px #0001;
     }
     #xra-navigation-dock > button {
-      position: static; width: 44px; height: 44px; margin: 0; flex: 0 0 44px;
+      position: static; box-sizing: border-box; display: flex; align-items: center; justify-content: center;
+      width: 44px; height: 44px; margin: 0; padding: 0; min-width: 0; flex: 0 0 44px;
+      appearance: none; -webkit-appearance: none; border-radius: 50%; touch-action: manipulation;
       border: 0; box-shadow: none; background: transparent; color: #222;
     }
     #${HOME_BUTTON_ID} svg {
@@ -969,11 +1014,12 @@
     @media (max-width: 350px) {
       #xra-navigation-dock { left: 8px; gap: 0; padding: 4px; }
       #xra-navigation-dock > button { flex-basis: 40px; width: 40px; height: 44px; }
+      #xra-navigation-dock > #${HOME_BUTTON_ID} { height: 40px; align-self: center; }
       #${TOGGLE_ID} { width: 90px; right: 8px; bottom: calc(17px + env(safe-area-inset-bottom, 0px)); font-size: 10px; }
     }
     .xra-list { padding-bottom: calc(100px + env(safe-area-inset-bottom, 0px)); }
     #${DETAIL_ROOT_ID} { padding-bottom: calc(100px + env(safe-area-inset-bottom, 0px)); }
-    .xra-load-actions { display: flex; justify-content: center; gap: 12px; margin-top: 16px; }
+    .xra-load-actions { display: flex; flex-wrap: wrap; justify-content: center; gap: 12px; margin-top: 16px; }
     .xra-load-actions button { min-height: 44px; padding: 8px 16px; background: white; border: 1px solid #ddd; border-radius: 22px; color: #222; }
   `;
 
@@ -1216,7 +1262,7 @@
     message.textContent = expired ? `${label}を取得できていません。再試行するか、通常表示でXの状態を確認してください` : `${label}を読み込んでいます`;
     if (expired) {
       const actions = document.createElement("div"); actions.className = "xra-load-actions";
-      [["再試行", () => location.reload()], ["通常表示", () => disableReader()], ["ホーム", () => location.replace(`${location.origin}/home`)]].forEach(([label, action]) => {
+      [["再試行", () => location.reload()], ["通常表示で再読込", () => { disableReader(); location.reload(); }], ["ホーム", () => location.replace(`${location.origin}/home`)]].forEach(([label, action]) => {
         const button = document.createElement("button"); button.type = "button"; button.textContent = label; button.addEventListener("click", action); actions.appendChild(button);
       });
       message.appendChild(actions);
@@ -1305,6 +1351,7 @@
       card.setAttribute(CARD_ATTR, `notification:${index}:${item.href}`);
       card.textContent = item.text;
       card.addEventListener("click", () => {
+        if (!beginReaderNavigation()) return;
         if (item.link?.isConnected) item.link.click();
         else if (item.cell.isConnected) item.cell.click();
       });
@@ -1313,6 +1360,8 @@
   };
 
   const renderCurrentFeed = () => {
+    const root = document.getElementById(ROOT_ID);
+    if (!isCurrentReaderRoot(root)) return;
     const section = currentSection();
     const list = document.querySelector(`.xra-section[data-section-id="${activeSectionId}"] .xra-list`);
     if (!section || !list) return;
@@ -1325,15 +1374,15 @@
     document.querySelectorAll("article").forEach(article => { if (article.closest(`#${ROOT_ID}`)) return; const key = getPostKey(article); if (!key || existing.has(key)) return; const card = createCard(article, { allowReplies: ["search", "profile"].includes(section.id) }); if (!card) return; list.appendChild(card); existing.add(key); added += 1; });
     if (list.querySelector(".xra-card")) list.querySelector(".xra-message")?.remove();
     else renderLoadState(list, section.id === "search" ? "検索結果" : "投稿");
-    const root = document.getElementById(ROOT_ID);
     tryRestorePosition(root);
   };
 
   const preloadNativeFeed = root => {
-    if (preloadLocked || root.xraRestore || !root.isConnected || root.scrollHeight - root.scrollTop - root.clientHeight > 320) return;
+    if (preloadLocked || root.xraRestore || !isCurrentReaderRoot(root) || !root.querySelector(`[${CARD_ATTR}]`) || root.scrollHeight - root.scrollTop - root.clientHeight > 320) return;
+    const generation = readerGeneration;
     preloadLocked = true;
     window.scrollBy(0, Math.max(480, Math.round(window.innerHeight * .82)));
-    setTimeout(() => { preloadLocked = false; renderCurrentFeed(); }, 650);
+    setTimeout(() => { if (generation !== readerGeneration) return; preloadLocked = false; if (isCurrentReaderRoot(root)) renderCurrentFeed(); }, 650);
   };
 
   const switchSection = sectionId => {
@@ -1422,14 +1471,7 @@
     }, true);
   };
 
-  const navigateNativePage = (url, selectors) => {
-    saveCurrentPosition();
-    const target = new URL(url);
-    if (target.href === location.href) return;
-    const link = findNativeLink(target.href, selectors);
-    if (!link) { location.assign(target.href); return; }
-    link.click();
-  };
+  const navigateNativePage = (url, selectors) => navigateReader(url, selectors);
   const openSectionSettings = () => {
     if (document.getElementById(SECTION_SETTINGS_ID)) return;
     const modal = document.createElement("div"); modal.id = SECTION_SETTINGS_ID;
@@ -1514,7 +1556,7 @@
 
     const createNavigationIcon = pathData => { const namespace = "http://www.w3.org/2000/svg"; const svg = document.createElementNS(namespace, "svg"); svg.setAttribute("viewBox", "0 0 24 24"); svg.setAttribute("aria-hidden", "true"); const path = document.createElementNS(namespace, "path"); path.setAttribute("d", pathData); svg.appendChild(path); return svg; };
     const backButton = document.createElement("button"); backButton.id = BACK_BUTTON_ID; backButton.type = "button"; backButton.setAttribute("aria-label", "戻る"); backButton.appendChild(createNavigationIcon("M19 12H5m7-7-7 7 7 7"));
-    backButton.addEventListener("click", () => { saveCurrentPosition(); if (history.length > 1) history.back(); else navigateReader(`${location.origin}/home`); });
+    backButton.addEventListener("click", goBackReader);
     const searchButton = document.createElement("button"); searchButton.id = SEARCH_BUTTON_ID; searchButton.type = "button"; searchButton.setAttribute("aria-label", "検索を開く"); searchButton.dataset.active = String(activeSectionId === "search"); searchButton.appendChild(createNavigationIcon("M10.5 18a7.5 7.5 0 1 0 0-15 7.5 7.5 0 0 0 0 15Zm5.5-2 5 5"));
     searchButton.addEventListener("click", () => { if (activeSectionId === "search") document.getElementById(ROOT_ID)?.querySelector(".xra-search-input")?.focus(); else navigateReader(`${location.origin}/explore`); });
     const settingsButton = document.createElement("button"); settingsButton.id = SETTINGS_BUTTON_ID; settingsButton.type = "button"; settingsButton.setAttribute("aria-label", "設定を開く");
@@ -1522,7 +1564,12 @@
     settingsButton.appendChild(settingsIcon); settingsButton.addEventListener("click", openSettingsMenu);
     const homeButton = document.createElement("button"); homeButton.id = HOME_BUTTON_ID; homeButton.type = "button"; homeButton.setAttribute("aria-label", "ホームに戻る"); homeButton.dataset.active = String(activeSectionId === "following");
     homeButton.appendChild(createNavigationIcon("M3 10.5 12 3l9 7.5V21h-7v-6h-4v6H3V10.5Z"));
-    homeButton.addEventListener("click", () => switchSection("following"));
+    homeButton.addEventListener("click", () => {
+      const home = CONFIG.sections.find(section => section.id === "following");
+      if (!matchesSectionUrl(home)) { navigateReader(home.url); return; }
+      const root = document.getElementById(ROOT_ID);
+      if (isCurrentReaderRoot(root)) { root.xraRestore = null; clearTimeout(root.xraRestoreTimer); root.scrollTo({ top: 0, behavior: "auto" }); }
+    });
     dock.append(backButton, searchButton, bookmarksList, settingsButton, homeButton);
     document.body.appendChild(dock);
   };
@@ -1540,7 +1587,7 @@
     addListSwipeNavigation(root);
     root.append(header, sections); document.body.appendChild(root);
     trackReadingPosition(root);
-    renderCurrentFeed(); [400, 1000, 1800, 5000, 8100, 12000].forEach(delay => setTimeout(() => { if (root.isConnected) renderCurrentFeed(); }, delay));
+    renderCurrentFeed(); root.xraLoadTimers = [400, 1000, 1800, 5000, 8100, 12000].map(delay => setTimeout(() => { if (isCurrentReaderRoot(root)) renderCurrentFeed(); }, delay));
   };
 
 
@@ -1573,7 +1620,7 @@
   };
 
   const enableReader = () => { writeSetting("xra-enabled", "true"); if (isDetailPage()) { closeFeedMediaModal(); document.getElementById(ROOT_ID)?.remove(); document.documentElement.classList.add("xra-detail-page"); simplifyDetailPage(); renderToggleButton(); return; } if (!isReaderFeedPage()) { navigateReader(`${location.origin}/home`); return; } createRoot(); renderToggleButton(); };
-  const disableReader = () => { saveCurrentPosition(); writeSetting("xra-enabled", "false"); closeFeedMediaModal(); document.getElementById(ROOT_ID)?.remove(); if (isDetailPage()) { clearDetailSimplification(); document.documentElement.classList.remove("xra-detail-page"); } renderToggleButton(); };
+  const disableReader = () => { saveCurrentPosition(); cancelReaderActivity(); navigationPending = null; writeSetting("xra-enabled", "false"); closeFeedMediaModal(); document.getElementById(ROOT_ID)?.remove(); if (isDetailPage()) { clearDetailSimplification(); document.documentElement.classList.remove("xra-detail-page"); } renderToggleButton(); };
   const addToggle = () => {
     let button = document.getElementById(TOGGLE_ID);
     if (!button) {
@@ -2010,15 +2057,16 @@
   };
 
   const preloadDetailReplies = (root, force = false) => {
-    if (detailPreloadLocked || !root.isConnected || root.dataset.statusId !== getCurrentStatusId() || (!force && (root.xraRestore || root.scrollHeight - root.scrollTop - root.clientHeight > 360))) return;
+    if (detailPreloadLocked || !isCurrentReaderRoot(root) || root.dataset.statusId !== getCurrentStatusId() || (!force && (root.xraRestore || root.scrollHeight - root.scrollTop - root.clientHeight > 360))) return;
     const state = detailState;
+    const generation = readerGeneration;
     if (!state || (!force && Date.now() - (state.lastLoad || 0) < 1200)) return;
     state.lastLoad = Date.now();
     detailPreloadLocked = true;
     renderDetailReplies(root, findMainDetailArticle());
     window.scrollBy(0, Math.max(520, Math.round(window.innerHeight * .86)));
     setTimeout(() => {
-      if (detailState !== state) return;
+      if (detailState !== state || generation !== readerGeneration) return;
       detailPreloadLocked = false;
       simplifyDetailPage();
     }, 1000);
@@ -2054,11 +2102,7 @@
       back.type = "button";
       back.setAttribute("aria-label", "戻る");
       back.textContent = "←";
-      back.addEventListener("click", () => {
-        saveCurrentPosition();
-        if (history.length > 1) history.back();
-        else navigateReader(`${location.origin}/home`);
-      });
+      back.addEventListener("click", goBackReader);
 
       const title = document.createElement("div");
       title.className = "xra-detail-title";
@@ -2177,7 +2221,7 @@
   };
 
   const simplifyDetailPage = () => {
-    if (!isDetailPage()) return;
+    if (!isDetailPage() || navigationPending || readSetting("xra-enabled") === "false") return;
 
     const mainArticle = markMainDetailArticle();
     if (mainArticle) createDetailReader(mainArticle);
@@ -2257,41 +2301,48 @@
   };
 
   let lastUrl = location.href;
-const start = () => {
+  const syncReaderRoute = () => {
+    if (location.href === lastUrl) return false;
+    cancelReaderActivity();
+    navigationPending = null;
+    lastUrl = location.href;
+    detectInitialSection();
+    syncPageMode();
+    return true;
+  };
+  const start = () => {
     addStyle();
     detectInitialSection();
     addToggle();
     syncPageMode();
-    window.addEventListener("pagehide", saveCurrentPosition);
+    window.addEventListener("pagehide", () => { saveCurrentPosition(); cancelReaderActivity(); navigationPending = null; });
     document.addEventListener("visibilitychange", () => { if (document.hidden) saveCurrentPosition(); });
-    window.addEventListener("pageshow", () => { lastUrl = location.href; detectInitialSection(); syncPageMode(); });
+    window.addEventListener("pageshow", event => {
+      if (event.persisted) { navigationPending = null; detectInitialSection(); syncPageMode(); }
+      syncReaderRoute();
+      if (document.getElementById(ROOT_ID)) renderCurrentFeed();
+    });
+    window.addEventListener("popstate", syncReaderRoute);
 
     const observer = new MutationObserver(mutations => {
       // Xがボタンを取り除いた場合は、自分のUIだけの変化でも復元する。
       if (!document.getElementById(STYLE_ID)) addStyle();
       if (!document.getElementById(TOGGLE_ID)) addToggle();
+      syncReaderRoute();
       if (mutations.length && mutations.every(isOwnUiMutation)) return;
-
-      if (location.href !== lastUrl) {
-        lastUrl = location.href;
-        detectInitialSection();
-        syncPageMode();
-      }
-
-      if (renderTimer) return;
-      renderTimer = setTimeout(() => { renderTimer = null; if (isDetailPage() && readSetting("xra-enabled") !== "false") simplifyDetailPage(); else if (document.getElementById(ROOT_ID)) renderCurrentFeed(); }, 160);
+      if (renderTimer || navigationPending) return;
+      const generation = readerGeneration;
+      renderTimer = setTimeout(() => {
+        renderTimer = null;
+        if (generation !== readerGeneration || syncReaderRoute()) return;
+        if (isDetailPage() && readSetting("xra-enabled") !== "false") simplifyDetailPage();
+        else if (document.getElementById(ROOT_ID)) renderCurrentFeed();
+      }, 160);
     });
 
     observer.observe(document.documentElement, { childList: true, characterData: true, subtree: true });
 
-    // 以前は500msごとに画面全体を再判定していたが、
-    // 軽量版ではURLが変わった時だけ安全確認する。
-    setInterval(() => {
-      if (location.href === lastUrl) return;
-      lastUrl = location.href;
-      detectInitialSection();
-      syncPageMode();
-    }, 1000);
+    setInterval(syncReaderRoute, 1000);
   };
 
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", start, { once: true }); else start();

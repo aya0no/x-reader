@@ -72,6 +72,11 @@ const check = async (name, run) => { await run(); console.log(`PASS ${name}`); p
     assert.deepEqual(await page.locator("#xra-navigation-dock > button").evaluateAll(nodes => nodes.map(node => node.id)), ["xra-back-button", "xra-search-button", "xra-bookmarks-list", "xra-settings-button", "xra-home-button"]);
     const boxes = await Promise.all(ids.map(id => page.locator(id).boundingBox()));
     assert.ok(boxes.every(Boolean));
+    const homeButton = await page.locator("#xra-home-button").boundingBox();
+    const homeIcon = await page.locator("#xra-home-button svg").boundingBox();
+    assert.ok(Math.abs(homeButton.width - homeButton.height) < 1);
+    assert.ok(Math.abs(homeButton.x + homeButton.width / 2 - homeIcon.x - homeIcon.width / 2) < 1);
+    assert.ok(Math.abs(homeButton.y + homeButton.height / 2 - homeIcon.y - homeIcon.height / 2) < 1);
     for (let i = 0; i < boxes.length; i++) for (let j = i + 1; j < boxes.length; j++) assert.ok(boxes[i].x + boxes[i].width <= boxes[j].x || boxes[j].x + boxes[j].width <= boxes[i].x);
     await page.setViewportSize({ width: 320, height: 812 });
     const narrowBoxes = await Promise.all(ids.map(id => page.locator(id).boundingBox()));

@@ -25,7 +25,7 @@ assert.equal(list.children.length, 1);
 assert.equal(list.children[0].dataset.phase, 'timeout');
 const actions = list.children[0].children[0].children;
 actions[0].events.click(); actions[1].events.click();
-assert.equal(reloads, 1); assert.equal(native, 1);
+assert.equal(reloads, 2); assert.equal(native, 1);
 context.render(list, '投稿'); assert.equal(list.children.length, 1, 'no repeated message replacement');
 for (const [name, end, read, selector] of [
  ['renderExploreTopics', '  const renderNotifications', 'readExploreTopics', '.xra-trend-item'],
