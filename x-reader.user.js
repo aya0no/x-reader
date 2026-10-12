@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         X Reader Accordion v7.0.4-step11-light
 // @namespace    local.x-reader-accordion
-// @version      7.0.4.14.11
+// @version      7.0.4.14.12
 // @description  検索、閲覧位置の復元、画像送り、返信・引用表示に対応した軽量なX Readerです。
 // @match        https://x.com/*
 // @match        https://twitter.com/*
@@ -395,9 +395,7 @@
       display: none !important;
     }
 
-    html.xra-detail-page #${TOGGLE_ID} {
-      display: none !important;
-    }
+
 
     .xra-detail-summary {
       display: flex;
@@ -796,9 +794,7 @@
       text-align: center;
     }
 
-    html.xra-detail-page #${TOGGLE_ID} {
-      display: none !important;
-    }
+
 
     #${BOOKMARKS_LIST_ID} {
       position: fixed;
@@ -841,11 +837,6 @@
       transform: scale(.98);
     }
 
-    html.xra-detail-page #${BOOKMARKS_LIST_ID},
-    html.xra-detail-page #${VIEW_TOGGLE_ID},
-    html.xra-detail-page #${SEARCH_BUTTON_ID},
-    html.xra-detail-page #${BACK_BUTTON_ID},
-    html.xra-detail-page #${SETTINGS_BUTTON_ID} { display: none !important; }
     #${TOGGLE_ID}, #${BOOKMARKS_LIST_ID}, #${VIEW_TOGGLE_ID}, #${SEARCH_BUTTON_ID}, #${BACK_BUTTON_ID}, #${SETTINGS_BUTTON_ID} {
       bottom: calc(16px + env(safe-area-inset-bottom, 0px));
       width: 44px; height: 44px;
@@ -883,6 +874,25 @@
       #${BOOKMARKS_LIST_ID} { right: 64px; }
       #${TOGGLE_ID} { right: 16px; }
     }
+    #xra-navigation-dock {
+      position: fixed; left: max(12px, env(safe-area-inset-left, 0px));
+      bottom: calc(12px + env(safe-area-inset-bottom, 0px));
+      z-index: 2147483300; display: flex; gap: 2px; padding: 5px;
+      border: 1px solid #ddd; border-radius: 30px; background: rgba(255,255,255,.97);
+      box-shadow: 0 3px 16px #0001;
+    }
+    #xra-navigation-dock > button {
+      position: static; width: 44px; height: 44px; margin: 0; flex: 0 0 44px;
+      border: 0; box-shadow: none; background: transparent; color: #222;
+    }
+    #${TOGGLE_ID} {
+      width: 54px; height: 54px; right: max(12px, env(safe-area-inset-right, 0px));
+      bottom: calc(12px + env(safe-area-inset-bottom, 0px)); z-index: 2147483301;
+    }
+    .xra-list { padding-bottom: calc(100px + env(safe-area-inset-bottom, 0px)); }
+    #${DETAIL_ROOT_ID} { padding-bottom: calc(100px + env(safe-area-inset-bottom, 0px)); }
+    .xra-load-actions { display: flex; justify-content: center; gap: 12px; margin-top: 16px; }
+    .xra-load-actions button { min-height: 44px; padding: 8px 16px; background: white; border: 1px solid #ddd; border-radius: 22px; color: #222; }
   `;
 
   const addStyle = () => { if (!document.getElementById(STYLE_ID)) { const style = document.createElement("style"); style.id = STYLE_ID; style.textContent = css; document.documentElement.appendChild(style); } };
@@ -1112,9 +1122,29 @@
     }
     return tools;
   };
+  const nativeContentScope = () => Array.from(document.querySelectorAll('[data-testid="primaryColumn"], main, [role="main"]')).find(node => !isOwnedUiNode(node)) || document.body;
+  const renderLoadState = (list, label) => {
+    const root = document.getElementById(ROOT_ID);
+    const expired = Date.now() - (root?.xraCreatedAt || Date.now()) >= 8000;
+    const phase = expired ? "timeout" : "pending";
+    const previous = list.querySelector(".xra-message");
+    if (previous?.dataset.phase === phase) return;
+    previous?.remove();
+    const message = document.createElement("div"); message.className = "xra-message"; message.dataset.phase = phase; message.setAttribute("role", "status");
+    message.textContent = expired ? `${label}を取得できていません。再試行するか、通常表示でXの状態を確認してください` : `${label}を読み込んでいます`;
+    if (expired) {
+      const actions = document.createElement("div"); actions.className = "xra-load-actions";
+      [["再試行", () => location.reload()], ["通常表示", () => disableReader()]].forEach(([label, action]) => {
+        const button = document.createElement("button"); button.type = "button"; button.textContent = label; button.addEventListener("click", action); actions.appendChild(button);
+      });
+      message.appendChild(actions);
+    }
+    list.appendChild(message);
+  };
+
   // Xの探索画面に表示された話題だけを読み取り、検索画面に再表示する。
   const readExploreTopics = () => {
-    const scope = document.querySelector('[data-testid="primaryColumn"]') || document.querySelector("main");
+    const scope = nativeContentScope();
     if (!scope) return [];
     const nodes = scope.querySelectorAll('[data-testid="trend"], [data-testid="trendItem"], [data-testid="cellInnerDiv"] [role="link"]');
     const topics = [];
@@ -1146,6 +1176,7 @@
 
   const renderExploreTopics = list => {
     const topics = readExploreTopics();
+    if (!topics.length) { if (!list.querySelector(".xra-trend-item")) renderLoadState(list, "話題"); return; }
     const signature = JSON.stringify(topics);
     if (list.dataset.trendSignature === signature) return;
     list.dataset.trendSignature = signature;
@@ -1172,7 +1203,7 @@
   };
 
   const renderNotifications = list => {
-    const scope = document.querySelector('[data-testid="primaryColumn"]') || document.querySelector("main");
+    const scope = nativeContentScope();
     const cells = Array.from(scope?.querySelectorAll('[data-testid="cellInnerDiv"], [data-testid="notification"]') || [])
       .filter(node => !node.closest(`#${ROOT_ID}`) && !node.parentElement?.closest('[data-testid="cellInnerDiv"], [data-testid="notification"]'));
     const items = cells.map(cell => {
@@ -1182,17 +1213,11 @@
       const href = link?.getAttribute("href") || "";
       return { cell, text, link, href };
     }).filter(item => item.text.length > 1 && !/^(?:通知|すべて|認証済み|メンション|Notifications|All|Verified|Mentions)$/.test(item.text));
-    const expired = !items.length && Date.now() - (document.getElementById(ROOT_ID)?.xraCreatedAt || Date.now()) > 4500;
-    const signature = JSON.stringify(items.map(item => [item.text, item.href])) + String(expired);
+    if (!items.length) { if (!list.querySelector(".xra-notification-item")) renderLoadState(list, "通知"); return; }
+    const signature = JSON.stringify(items.map(item => [item.text, item.href]));
     if (list.dataset.notificationSignature === signature) return;
     list.dataset.notificationSignature = signature;
     list.replaceChildren();
-    if (!items.length) {
-      const message = document.createElement("div"); message.className = "xra-message";
-      message.textContent = expired ? "通知を表示できませんでした。右下のボタンから通常表示を確認できます" : "通知を読み込んでいます";
-      list.appendChild(message);
-      return;
-    }
     items.forEach((item, index) => {
       const card = document.createElement("button"); card.type = "button"; card.className = "xra-notification-item";
       card.setAttribute(CARD_ATTR, `notification:${index}:${item.href}`);
@@ -1216,11 +1241,9 @@
     const existing = new Set(Array.from(list.querySelectorAll(`[${CARD_ATTR}]`)).map(card => card.getAttribute(CARD_ATTR)));
     let added = 0;
     document.querySelectorAll("article").forEach(article => { if (article.closest(`#${ROOT_ID}`)) return; const key = getPostKey(article); if (!key || existing.has(key)) return; const card = createCard(article, { allowReplies: ["search", "profile"].includes(section.id) }); if (!card) return; list.appendChild(card); existing.add(key); added += 1; });
-    if (!list.querySelector(".xra-card") && !list.querySelector(".xra-message")) list.innerHTML = '<div class="xra-message">投稿を読み込んでいます</div>';
-    if (added > 0) list.querySelector(".xra-message")?.remove();
+    if (list.querySelector(".xra-card")) list.querySelector(".xra-message")?.remove();
+    else renderLoadState(list, section.id === "search" ? "検索結果" : "投稿");
     const root = document.getElementById(ROOT_ID);
-    if (section.id === "search" && currentSearchQuery() && !list.querySelector(".xra-card") && root?.xraCreatedAt && Date.now() - root.xraCreatedAt > 4500) list.innerHTML = '<div class="xra-message">検索結果が見つかりません</div>';
-    if (["profile", "bookmarks"].includes(section.id) && !list.querySelector(".xra-card") && root?.xraCreatedAt && Date.now() - root.xraCreatedAt > 4500) list.innerHTML = '<div class="xra-message">投稿が見つかりません</div>';
     tryRestorePosition(root);
   };
 
@@ -1341,21 +1364,19 @@
     const addItem = (label, action, className = "") => { const button = document.createElement("button"); button.type = "button"; button.className = `xra-post-menu-action ${className}`.trim(); button.setAttribute("role", "menuitem"); button.textContent = label; button.addEventListener("click", () => { close(); action(); }); panel.appendChild(button); };
     addItem("マイページ", () => navigateNativePage("https://x.com/ngmkkrm", 'a[data-testid="AppTabBar_Profile_Link"][href], a[data-testid="SideNav_Profile_Link"][href], a[href="/ngmkkrm"]'));
     addItem("通知", () => navigateNativePage("https://x.com/notifications", 'a[data-testid="AppTabBar_Notifications_Link"][href], a[data-testid="SideNav_Notifications_Link"][href], a[href="/notifications"]'));
+    const root = document.getElementById(ROOT_ID);
+    if (root) addItem(root.dataset.viewMode === "comfortable" ? "コンパクト表示に切り替える" : "ゆったり表示に切り替える", () => createViewModeButton(root).click());
     addItem("閉じる", () => {}, "xra-post-menu-close");
     modal.appendChild(panel); modal.addEventListener("click", event => { if (event.target === modal) close(); });
     document.body.appendChild(modal); document.addEventListener("keydown", onKeyDown);
     panel.querySelector("button")?.focus({ preventScroll: true });
   };
 
-  const createRoot = () => {
-    if (document.getElementById(ROOT_ID)) return;
-    const root = document.createElement("div"); root.id = ROOT_ID; root.dataset.viewMode = getSavedViewMode(); root.xraCreatedAt = Date.now();
-    const header = document.createElement("header"); header.className = "xra-header";
-    const tabs = document.createElement("nav"); tabs.className = "xra-tabs"; tabs.setAttribute("role", "tablist"); tabs.setAttribute("aria-label", "リストを切り替える");
-    const sections = document.createElement("main"); sections.className = "xra-sections";
-    CONFIG.sections.forEach(section => { const elements = createSection(section); if (["profile", "notifications", "bookmarks"].includes(section.id)) { if (section.id === activeSectionId) tabs.prepend(elements.tab); } else if (section.id !== "search") tabs.appendChild(elements.tab); sections.appendChild(elements.panel); });
-    header.appendChild(tabs);
-
+  const syncNavigationDock = visible => {
+    const existing = document.getElementById("xra-navigation-dock");
+    if (!visible) { existing?.remove(); return; }
+    if (existing) { existing.querySelector(`#${SEARCH_BUTTON_ID}`).dataset.active = String(activeSectionId === "search"); return; }
+    const dock = document.createElement("nav"); dock.id = "xra-navigation-dock"; dock.setAttribute("aria-label", "操作メニュー");
     const bookmarksList = document.createElement("button");
     bookmarksList.id = BOOKMARKS_LIST_ID;
     bookmarksList.type = "button";
@@ -1371,16 +1392,27 @@
     const backButton = document.createElement("button"); backButton.id = BACK_BUTTON_ID; backButton.type = "button"; backButton.setAttribute("aria-label", "戻る"); backButton.appendChild(createNavigationIcon("M19 12H5m7-7-7 7 7 7"));
     backButton.addEventListener("click", () => { saveCurrentPosition(); if (history.length > 1) history.back(); else navigateReader(`${location.origin}/home`); });
     const searchButton = document.createElement("button"); searchButton.id = SEARCH_BUTTON_ID; searchButton.type = "button"; searchButton.setAttribute("aria-label", "検索を開く"); searchButton.dataset.active = String(activeSectionId === "search"); searchButton.appendChild(createNavigationIcon("M10.5 18a7.5 7.5 0 1 0 0-15 7.5 7.5 0 0 0 0 15Zm5.5-2 5 5"));
-    searchButton.addEventListener("click", () => { if (activeSectionId === "search") root.querySelector(".xra-search-input")?.focus(); else navigateReader(`${location.origin}/explore`); });
+    searchButton.addEventListener("click", () => { if (activeSectionId === "search") document.getElementById(ROOT_ID)?.querySelector(".xra-search-input")?.focus(); else navigateReader(`${location.origin}/explore`); });
     const settingsButton = document.createElement("button"); settingsButton.id = SETTINGS_BUTTON_ID; settingsButton.type = "button"; settingsButton.setAttribute("aria-label", "設定を開く");
     const settingsIcon = createNavigationIcon("M10 2h4l.5 2.1 1.7.7 1.9-1 2 3.5-1.5 1.4.2 1.8 1.5 1.4-2 3.5-1.9-1-1.7.7L14 22h-4l-.5-2.1-1.7-.7-1.9 1-2-3.5 1.5-1.4-.2-1.8-1.5-1.4 2-3.5 1.9 1 1.7-.7L10 2Zm2 7a3 3 0 1 0 0 6 3 3 0 0 0 0-6Z");
     settingsButton.appendChild(settingsIcon); settingsButton.addEventListener("click", openSettingsMenu);
-    const viewModeButton = createViewModeButton(root);
+    dock.append(backButton, searchButton, bookmarksList, settingsButton); document.body.appendChild(dock);
+  };
+
+  const createRoot = () => {
+    if (document.getElementById(ROOT_ID)) return;
+    const root = document.createElement("div"); root.id = ROOT_ID; root.dataset.viewMode = getSavedViewMode(); root.xraCreatedAt = Date.now();
+    const header = document.createElement("header"); header.className = "xra-header";
+    const tabs = document.createElement("nav"); tabs.className = "xra-tabs"; tabs.setAttribute("role", "tablist"); tabs.setAttribute("aria-label", "リストを切り替える");
+    const sections = document.createElement("main"); sections.className = "xra-sections";
+    CONFIG.sections.forEach(section => { const elements = createSection(section); if (["profile", "notifications", "bookmarks"].includes(section.id)) { if (section.id === activeSectionId) tabs.prepend(elements.tab); } else if (section.id !== "search") tabs.appendChild(elements.tab); sections.appendChild(elements.panel); });
+    header.appendChild(tabs);
+
     root.addEventListener("scroll", () => preloadNativeFeed(root), { passive: true });
     addListSwipeNavigation(root);
-    root.append(header, sections, backButton, settingsButton, searchButton, viewModeButton, bookmarksList); document.body.appendChild(root);
+    root.append(header, sections); document.body.appendChild(root);
     trackReadingPosition(root);
-    renderCurrentFeed(); setTimeout(renderCurrentFeed, 400); setTimeout(renderCurrentFeed, 1000); setTimeout(renderCurrentFeed, 1800); setTimeout(renderCurrentFeed, 5000);
+    renderCurrentFeed(); [400, 1000, 1800, 5000, 8100, 12000].forEach(delay => setTimeout(() => { if (root.isConnected) renderCurrentFeed(); }, delay));
   };
 
 
@@ -1454,6 +1486,7 @@
     if (!button) return;
 
     const readerIsOpen = Boolean(document.getElementById(ROOT_ID)) || (isDetailPage() && readSetting("xra-enabled") !== "false");
+    syncNavigationDock(readerIsOpen);
     const mode = readerIsOpen ? "normal" : "reader";
     const utilityPage = !isDetailPage() && !isReaderFeedPage();
     const label = utilityPage ? "X Readerのホームに戻る" : readerIsOpen ? "通常表示に戻す" : "簡素表示に切り替える";
@@ -1763,7 +1796,7 @@
 
   const getDetailReplyArticles = mainArticle => {
     const mainStatusId = getCurrentStatusId();
-    const scope = mainArticle?.closest('[data-testid="primaryColumn"]') || document.querySelector('[data-testid="primaryColumn"]') || document.querySelector("main") || document;
+    const scope = mainArticle?.closest('[data-testid="primaryColumn"]') || nativeContentScope() || document;
     const articles = Array.from(scope.querySelectorAll("article")).filter(article => !isOwnedUiNode(article));
     const mainIndex = articles.indexOf(mainArticle);
     const candidates = mainIndex >= 0 ? articles.slice(mainIndex + 1) : detailState?.id === mainStatusId ? articles : [];
@@ -2129,10 +2162,10 @@
 
     return Boolean(
       element.matches?.(
-        `#${ROOT_ID}, #${DETAIL_ROOT_ID}, #${TOGGLE_ID}, #${BOOKMARKS_LIST_ID}, #${MEDIA_MODAL_ID}, #${VIEW_TOGGLE_ID}, #${SEARCH_BUTTON_ID}, #${BACK_BUTTON_ID}, #${POST_MENU_ID}, #${SETTINGS_BUTTON_ID}, #${SETTINGS_MENU_ID}`
+        `#xra-navigation-dock, #${ROOT_ID}, #${DETAIL_ROOT_ID}, #${TOGGLE_ID}, #${BOOKMARKS_LIST_ID}, #${MEDIA_MODAL_ID}, #${VIEW_TOGGLE_ID}, #${SEARCH_BUTTON_ID}, #${BACK_BUTTON_ID}, #${POST_MENU_ID}, #${SETTINGS_BUTTON_ID}, #${SETTINGS_MENU_ID}`
       ) ||
       element.closest?.(
-        `#${ROOT_ID}, #${DETAIL_ROOT_ID}, #${TOGGLE_ID}, #${BOOKMARKS_LIST_ID}, #${MEDIA_MODAL_ID}, #${VIEW_TOGGLE_ID}, #${SEARCH_BUTTON_ID}, #${BACK_BUTTON_ID}, #${POST_MENU_ID}, #${SETTINGS_BUTTON_ID}, #${SETTINGS_MENU_ID}`
+        `#xra-navigation-dock, #${ROOT_ID}, #${DETAIL_ROOT_ID}, #${TOGGLE_ID}, #${BOOKMARKS_LIST_ID}, #${MEDIA_MODAL_ID}, #${VIEW_TOGGLE_ID}, #${SEARCH_BUTTON_ID}, #${BACK_BUTTON_ID}, #${POST_MENU_ID}, #${SETTINGS_BUTTON_ID}, #${SETTINGS_MENU_ID}`
       )
     );
   };
