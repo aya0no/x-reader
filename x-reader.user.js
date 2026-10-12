@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         X Reader Accordion v7.0.4-step11-light
 // @namespace    local.x-reader-accordion
-// @version      7.0.4.14.6
+// @version      7.0.4.14.7
 // @description  検索、閲覧位置の復元、画像送り、返信・引用表示に対応した軽量なX Readerです。
 // @match        https://x.com/*
 // @match        https://twitter.com/*
@@ -1419,16 +1419,27 @@
   };
 
   const getDetailLikeCount = article => {
-    const button = article?.querySelector('[data-testid="like"], [data-testid="unlike"]');
+    const quote = findQuoteContainer(article);
+    const button = Array.from(article?.querySelectorAll('[data-testid="like"], [data-testid="unlike"]') || [])
+      .find(node => node.closest("article") === article && !quote?.contains(node));
     if (!button) return "0";
 
-    const visibleText = (button.textContent || "").replace(/\s+/g, " ").trim();
-    const visibleMatch = visibleText.match(/[\d,.]+(?:万|億)?/);
-    if (visibleMatch) return visibleMatch[0];
+    const countPattern = "[\\d,.]+(?:万|億|[KMB])?";
+    const aria = (button.getAttribute("aria-label") || "").replace(/\s+/g, " ").trim();
+    const labeledCount = aria.match(new RegExp(`(${countPattern})\\s*(?:件の)?(?:いいね|likes?\\b)`, "i"))
+      || aria.match(new RegExp(`(?:いいね|likes?\\b)\\s*(${countPattern})`, "i"));
+    if (labeledCount) return labeledCount[1];
 
-    const aria = button.getAttribute("aria-label") || "";
-    const ariaMatch = aria.match(/[\d,.]+(?:万|億)?/);
-    return ariaMatch ? ariaMatch[0] : "0";
+    // Xのいいね数用要素だけを読む。ボタン内の別の数値は使わない。
+    const count = button.querySelector('[data-testid="app-text-transition-container"]');
+    const countText = (count?.textContent || "").replace(/\s+/g, "").trim();
+    if (new RegExp(`^${countPattern}$`, "i").test(countText)) return countText;
+
+    const directText = Array.from(button.childNodes)
+      .filter(node => node.nodeType === 3)
+      .map(node => node.textContent || "").join("").replace(/\s+/g, "").trim();
+    if (new RegExp(`^${countPattern}$`, "i").test(directText)) return directText;
+    return "0";
   };
 
   const getDetailIdentity = article => {
