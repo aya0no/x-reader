@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         X Reader Accordion v7.0.4-step11-light
 // @namespace    local.x-reader-accordion
-// @version      7.0.4.14.8
+// @version      7.0.4.14.9
 // @description  検索、閲覧位置の復元、画像送り、返信・引用表示に対応した軽量なX Readerです。
 // @match        https://x.com/*
 // @match        https://twitter.com/*
@@ -1269,6 +1269,19 @@
     }, true);
   };
 
+  const navigateNativePage = (url, selectors) => {
+    saveCurrentPosition();
+    const target = new URL(url);
+    const links = Array.from(document.querySelectorAll(selectors));
+    const link = links.find(item => {
+      if (item.closest(`#${ROOT_ID}, #${DETAIL_ROOT_ID}`)) return false;
+      try { const candidate = new URL(item.getAttribute("href"), location.origin); return candidate.origin === target.origin && candidate.pathname.replace(/\/$/, "") === target.pathname.replace(/\/$/, ""); }
+      catch { return false; }
+    });
+    if (!link) { location.assign(target.href); return; }
+    link.click();
+    setTimeout(() => { if (location.pathname.replace(/\/$/, "") !== target.pathname.replace(/\/$/, "")) location.assign(target.href); }, 1400);
+  };
   const openSettingsMenu = () => {
     if (document.getElementById(SETTINGS_MENU_ID)) return;
     const modal = document.createElement("div"); modal.id = SETTINGS_MENU_ID;
@@ -1276,8 +1289,8 @@
     const onKeyDown = event => { if (event.key === "Escape") close(); };
     const close = () => { document.removeEventListener("keydown", onKeyDown); modal.remove(); };
     const addItem = (label, action, className = "") => { const button = document.createElement("button"); button.type = "button"; button.className = `xra-post-menu-action ${className}`.trim(); button.setAttribute("role", "menuitem"); button.textContent = label; button.addEventListener("click", () => { close(); action(); }); panel.appendChild(button); };
-    addItem("マイページ", () => navigateReader("https://x.com/ngmkkrm"));
-    addItem("通知", () => navigateReader("https://x.com/notifications"));
+    addItem("マイページ", () => navigateNativePage("https://x.com/ngmkkrm", 'a[data-testid="AppTabBar_Profile_Link"][href], a[data-testid="SideNav_Profile_Link"][href], a[href="/ngmkkrm"]'));
+    addItem("通知", () => navigateNativePage("https://x.com/notifications", 'a[data-testid="AppTabBar_Notifications_Link"][href], a[data-testid="SideNav_Notifications_Link"][href], a[href="/notifications"]'));
     addItem("閉じる", () => {}, "xra-post-menu-close");
     modal.appendChild(panel); modal.addEventListener("click", event => { if (event.target === modal) close(); });
     document.body.appendChild(modal); document.addEventListener("keydown", onKeyDown);

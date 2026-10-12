@@ -11,7 +11,7 @@ const homePosts = Array.from({ length: 30 }, (_, i) => post(String(1000 - i), { 
 const main = post("5000", { text: '本文と<a href="https://example.org/story">関連リンク</a>', quote: quote(), images: 2, likes: 65, impressions: "3,142" });
 const detailPosts = post("4900", { quote: quote("5000", "別の投稿がこの投稿を引用しているケース", 0) }) + main + post("5001", { quote: quote("9901", "返信の引用", 2) }) + post("5002", { images: 2 });
 const exploreTopics = '<div data-testid="trend"><span>日本のトレンド</span><span>#音楽の話題</span><span>12,345件のポスト</span></div><div data-testid="cellInnerDiv"><div role="link"><span>1日前・ニュース・31,943件のポスト</span><span>ADHDの日常の困りごとがXで話題に</span></div></div>';
-const shell = body => `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><style>*{box-sizing:border-box}html,body{margin:0;width:100%;overflow-x:hidden}main>section>article{min-height:340px;padding:16px;overflow-wrap:anywhere}img{max-width:100%;object-fit:cover}</style></head><body><nav><a data-testid="AppTabBar_Profile_Link" href="/reader">プロフィール</a></nav><main data-testid="primaryColumn"><section id="native-timeline">${body}</section></main></body></html>`;
+const shell = body => `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><style>*{box-sizing:border-box}html,body{margin:0;width:100%;overflow-x:hidden}main>section>article{min-height:340px;padding:16px;overflow-wrap:anywhere}img{max-width:100%;object-fit:cover}</style></head><body><nav><a data-testid="AppTabBar_Profile_Link" href="/ngmkkrm" onclick="event.preventDefault(); history.pushState(null, '', '/ngmkkrm'); this.after(document.createElement('span'))">プロフィール</a><a data-testid="AppTabBar_Notifications_Link" href="/notifications" onclick="event.preventDefault(); history.pushState(null, '', '/notifications'); this.after(document.createElement('span'))">通知</a></nav><main data-testid="primaryColumn"><section id="native-timeline">${body}</section></main></body></html>`;
 const errors = [];
 let activePage;
 let passed = 0;
@@ -80,17 +80,21 @@ const check = async (name, run) => { await run(); console.log(`PASS ${name}`); p
     await page.waitForURL("https://x.com/home");
   });
 
-  await check("settings opens native notifications and own profile", async () => {
+  await check("settings opens native notifications and own profile without document reload", async () => {
+    await page.evaluate(() => { window.xraDocumentMarker = 1; });
     await page.locator("#xra-settings-button").click();
     await page.getByRole("menuitem", { name: "通知" }).click();
     await page.waitForURL("https://x.com/notifications");
+    assert.equal(await page.evaluate(() => window.xraDocumentMarker), 1);
     assert.equal(await page.locator("#xra-root").count(), 0);
     await page.getByRole("button", { name: "X Readerのホームに戻る" }).click();
     await page.waitForURL("https://x.com/home");
     await page.waitForSelector("#xra-root");
+    await page.evaluate(() => { window.xraDocumentMarker = 2; });
     await page.locator("#xra-settings-button").click();
     await page.getByRole("menuitem", { name: "マイページ" }).click();
     await page.waitForURL("https://x.com/ngmkkrm");
+    assert.equal(await page.evaluate(() => window.xraDocumentMarker), 2);
     assert.equal(await page.locator("#xra-root").count(), 0);
     await page.getByRole("button", { name: "X Readerのホームに戻る" }).click();
     await page.waitForURL("https://x.com/home");
