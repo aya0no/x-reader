@@ -40,8 +40,18 @@ const check = async (name, run) => { await run(); console.log(`PASS ${name}`); p
     assert.equal(await page.locator("#xra-boot-style").count(), 0);
     assert.equal(await page.locator("html.xra-booting").count(), 0);
     assert.equal(await page.locator(".xra-handle").first().textContent(), "reader");
-    const overlap = await page.locator(".xra-card").first().evaluate(card => { const a = card.querySelector(".xra-card-bookmark").getBoundingClientRect(), b = card.querySelector(".xra-media-list").getBoundingClientRect(); return a.right > b.left; });
-    assert.equal(overlap, false);
+    assert.equal(await page.locator(".xra-card-bookmark").count(), 0);
+  });
+
+  await check("long press saves a feed post through X", async () => {
+    await page.locator(".xra-card").first().evaluate(async card => {
+      card.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, pointerType: "touch", button: 0, clientX: 140, clientY: 240 }));
+      await new Promise(resolve => setTimeout(resolve, 620));
+      card.dispatchEvent(new PointerEvent("pointerup", { bubbles: true, pointerType: "touch", button: 0, clientX: 140, clientY: 240 }));
+    });
+    await page.getByRole("menuitem", { name: "保存する" }).click();
+    assert.equal(await page.locator('[data-native="1000"] [data-testid="removeBookmark"]').count(), 1);
+    assert.equal(await page.locator("#xra-post-menu").count(), 0);
   });
 
   await check("search button and floating button spacing", async () => {
@@ -146,10 +156,14 @@ const check = async (name, run) => { await run(); console.log(`PASS ${name}`); p
     assert.equal(page.url(), "https://x.com/reader/status/5000");
   });
 
-  await check("bookmark action still uses native X button", async () => {
-    await page.locator(".xra-detail-bookmark").click();
-    await page.waitForFunction(() => document.querySelector(".xra-detail-bookmark")?.dataset.saved === "true");
+  await check("detail and reply long press save through X", async () => {
+    assert.equal(await page.locator(".xra-detail-bookmark").count(), 0);
+    await page.locator(".xra-detail-body").dispatchEvent("contextmenu");
+    await page.getByRole("menuitem", { name: "保存する" }).click();
     assert.equal(await page.locator('[data-native="5000"] [data-testid="removeBookmark"]').count(), 1);
+    await page.locator(".xra-detail-reply").first().dispatchEvent("contextmenu");
+    await page.getByRole("menuitem", { name: "保存する" }).click();
+    assert.equal(await page.locator('[data-native="5001"] [data-testid="removeBookmark"]').count(), 1);
   });
 
   await check("late reply text and images update without duplicating cards", async () => {
