@@ -34,12 +34,27 @@ const check = async (name, run) => { await run(); console.log(`PASS ${name}`); p
   await page.waitForSelector(".xra-card");
 
   await check("fixed tabs, no counts, cards and reposts preserved", async () => {
-    assert.deepEqual(await page.locator(".xra-section-tab").allTextContents(), ["ホーム", "1", "2", "株", "レシピ", "検索"]);
+    assert.deepEqual(await page.locator(".xra-section-tab").allTextContents(), ["ホーム", "1", "2", "株", "レシピ"]);
     assert.equal(await page.locator(".xra-card").count(), 30);
     assert.equal(await page.locator(".xra-header").evaluate(node => getComputedStyle(node).position), "fixed");
     assert.equal(await page.locator(".xra-handle").first().textContent(), "reader");
     const overlap = await page.locator(".xra-card").first().evaluate(card => { const a = card.querySelector(".xra-card-bookmark").getBoundingClientRect(), b = card.querySelector(".xra-media-list").getBoundingClientRect(); return a.right > b.left; });
     assert.equal(overlap, false);
+  });
+
+  await check("search button and floating button spacing", async () => {
+    const ids = ["#xra-back-button", "#xra-search-button", "#xra-view-toggle", "#xra-bookmarks-list", "#xra-toggle"];
+    const boxes = await Promise.all(ids.map(id => page.locator(id).boundingBox()));
+    assert.ok(boxes.every(Boolean));
+    for (let i = 0; i < boxes.length; i++) for (let j = i + 1; j < boxes.length; j++) assert.ok(boxes[i].x + boxes[i].width <= boxes[j].x || boxes[j].x + boxes[j].width <= boxes[i].x);
+    await page.locator("#xra-search-button").click();
+    await page.waitForURL("https://x.com/explore");
+    assert.equal(await page.locator(".xra-search-input").count(), 1);
+    assert.equal(await page.locator("#xra-search-button").getAttribute("data-active"), "true");
+    await page.locator("#xra-search-button").click();
+    assert.equal(await page.locator(".xra-search-input").evaluate(node => document.activeElement === node), true);
+    await page.locator("#xra-back-button").click();
+    await page.waitForURL("https://x.com/home");
   });
 
   await check("multi-image gallery, keyboard, touch and focus", async () => {
@@ -66,7 +81,7 @@ const check = async (name, run) => { await run(); console.log(`PASS ${name}`); p
     await target.dispatchEvent("click");
     await page.waitForURL(/\/status\//);
     await page.waitForSelector("#xra-detail-root");
-    await page.goBack();
+    await page.getByRole("button", { name: "戻る", exact: true }).click();
     await page.waitForSelector(".xra-card");
     await page.waitForFunction(value => Math.abs(document.getElementById("xra-root").scrollTop - value) < 4, before);
   });

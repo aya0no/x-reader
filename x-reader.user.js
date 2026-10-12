@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         X Reader Accordion v7.0.4-step11-light
 // @namespace    local.x-reader-accordion
-// @version      7.0.4.14.2
+// @version      7.0.4.14.3
 // @description  検索、閲覧位置の復元、画像送り、返信・引用表示に対応した軽量なX Readerです。
 // @match        https://x.com/*
 // @match        https://twitter.com/*
@@ -25,6 +25,8 @@
   const BOOKMARKS_LIST_ID = "xra-bookmarks-list";
   const MEDIA_MODAL_ID = "xra-media-modal";
   const VIEW_TOGGLE_ID = "xra-view-toggle";
+  const SEARCH_BUTTON_ID = "xra-search-button";
+  const BACK_BUTTON_ID = "xra-back-button";
   const VIEW_MODE_KEY = "xra-feed-view-mode";
   const BOOT_STYLE_ID = "xra-boot-style";
   const BOOTING_CLASS = "xra-booting";
@@ -928,9 +930,34 @@
     }
 
     html.xra-detail-page #${BOOKMARKS_LIST_ID},
-    html.xra-detail-page #${VIEW_TOGGLE_ID} {
-      display: none !important;
+    html.xra-detail-page #${VIEW_TOGGLE_ID},
+    html.xra-detail-page #${SEARCH_BUTTON_ID},
+    html.xra-detail-page #${BACK_BUTTON_ID} { display: none !important; }
+    #${TOGGLE_ID}, #${BOOKMARKS_LIST_ID}, #${VIEW_TOGGLE_ID}, #${SEARCH_BUTTON_ID}, #${BACK_BUTTON_ID} {
+      bottom: calc(16px + env(safe-area-inset-bottom, 0px));
+      width: 44px; height: 44px;
+      touch-action: manipulation;
     }
+    #${TOGGLE_ID} { right: 12px; }
+    #${BOOKMARKS_LIST_ID} { right: 64px; }
+    #${VIEW_TOGGLE_ID} { right: 116px; }
+    #${SEARCH_BUTTON_ID}, #${BACK_BUTTON_ID} {
+      position: fixed; z-index: 2147483646;
+      display: flex; align-items: center; justify-content: center;
+      padding: 0; border: 1px solid #bdbdbd; border-radius: 50%;
+      background: rgba(255,255,255,.96); color: #222;
+      box-shadow: 0 4px 14px rgba(0,0,0,.14);
+      backdrop-filter: blur(12px); -webkit-tap-highlight-color: transparent;
+    }
+    #${SEARCH_BUTTON_ID} { right: 168px; }
+    #${BACK_BUTTON_ID} { left: 12px; }
+    #${SEARCH_BUTTON_ID}[data-active="true"] { border-color: #171717; background: #171717; color: #fff; }
+    #${SEARCH_BUTTON_ID} svg, #${BACK_BUTTON_ID} svg {
+      display: block; width: 20px; height: 20px;
+      fill: none; stroke: currentColor; stroke-width: 1.8;
+      stroke-linecap: round; stroke-linejoin: round;
+    }
+    #${SEARCH_BUTTON_ID}:active, #${BACK_BUTTON_ID}:active { transform: scale(.96); }
   `;
 
   const addStyle = () => { if (!document.getElementById(STYLE_ID)) { const style = document.createElement("style"); style.id = STYLE_ID; style.textContent = css; document.documentElement.appendChild(style); } };
@@ -1214,7 +1241,7 @@
     const isInteractiveTarget = target => target instanceof Element && Boolean(target.closest("button, a, input, textarea, select, [contenteditable='true']"));
 
     root.addEventListener("touchstart", event => {
-      if (event.touches.length !== 1 || isInteractiveTarget(event.target)) { tracking = false; return; }
+      if (activeSectionId === "search" || event.touches.length !== 1 || isInteractiveTarget(event.target)) { tracking = false; return; }
       const touch = event.touches[0];
       if (touch.clientX <= SWIPE_EDGE_GUARD || touch.clientX >= window.innerWidth - SWIPE_EDGE_GUARD) { tracking = false; return; }
       startX = touch.clientX;
@@ -1251,7 +1278,7 @@
     const header = document.createElement("header"); header.className = "xra-header";
     const tabs = document.createElement("nav"); tabs.className = "xra-tabs"; tabs.setAttribute("role", "tablist"); tabs.setAttribute("aria-label", "リストを切り替える");
     const sections = document.createElement("main"); sections.className = "xra-sections";
-    CONFIG.sections.forEach(section => { const elements = createSection(section); tabs.appendChild(elements.tab); sections.appendChild(elements.panel); });
+    CONFIG.sections.forEach(section => { const elements = createSection(section); if (section.id !== "search") tabs.appendChild(elements.tab); sections.appendChild(elements.panel); });
     header.appendChild(tabs);
 
     const bookmarksList = document.createElement("button");
@@ -1265,10 +1292,15 @@
       navigateReader(`${location.origin}/i/bookmarks`);
     });
 
+    const createNavigationIcon = pathData => { const namespace = "http://www.w3.org/2000/svg"; const svg = document.createElementNS(namespace, "svg"); svg.setAttribute("viewBox", "0 0 24 24"); svg.setAttribute("aria-hidden", "true"); const path = document.createElementNS(namespace, "path"); path.setAttribute("d", pathData); svg.appendChild(path); return svg; };
+    const backButton = document.createElement("button"); backButton.id = BACK_BUTTON_ID; backButton.type = "button"; backButton.setAttribute("aria-label", "戻る"); backButton.appendChild(createNavigationIcon("M19 12H5m7-7-7 7 7 7"));
+    backButton.addEventListener("click", () => { saveCurrentPosition(); if (history.length > 1) history.back(); else navigateReader(`${location.origin}/home`); });
+    const searchButton = document.createElement("button"); searchButton.id = SEARCH_BUTTON_ID; searchButton.type = "button"; searchButton.setAttribute("aria-label", "検索を開く"); searchButton.dataset.active = String(activeSectionId === "search"); searchButton.appendChild(createNavigationIcon("M10.5 18a7.5 7.5 0 1 0 0-15 7.5 7.5 0 0 0 0 15Zm5.5-2 5 5"));
+    searchButton.addEventListener("click", () => { if (activeSectionId === "search") root.querySelector(".xra-search-input")?.focus(); else navigateReader(`${location.origin}/explore`); });
     const viewModeButton = createViewModeButton(root);
     root.addEventListener("scroll", () => preloadNativeFeed(root), { passive: true });
     addListSwipeNavigation(root);
-    root.append(header, sections, viewModeButton, bookmarksList); document.body.appendChild(root);
+    root.append(header, sections, backButton, searchButton, viewModeButton, bookmarksList); document.body.appendChild(root);
     trackReadingPosition(root);
     renderCurrentFeed(); setTimeout(renderCurrentFeed, 400); setTimeout(renderCurrentFeed, 1000); setTimeout(renderCurrentFeed, 1800); setTimeout(renderCurrentFeed, 5000);
     hideBootScreen();
@@ -2048,10 +2080,10 @@
 
     return Boolean(
       element.matches?.(
-        `#${ROOT_ID}, #${DETAIL_ROOT_ID}, #${TOGGLE_ID}, #${BOOKMARKS_LIST_ID}, #${MEDIA_MODAL_ID}, #${VIEW_TOGGLE_ID}`
+        `#${ROOT_ID}, #${DETAIL_ROOT_ID}, #${TOGGLE_ID}, #${BOOKMARKS_LIST_ID}, #${MEDIA_MODAL_ID}, #${VIEW_TOGGLE_ID}, #${SEARCH_BUTTON_ID}, #${BACK_BUTTON_ID}`
       ) ||
       element.closest?.(
-        `#${ROOT_ID}, #${DETAIL_ROOT_ID}, #${TOGGLE_ID}, #${BOOKMARKS_LIST_ID}, #${MEDIA_MODAL_ID}, #${VIEW_TOGGLE_ID}`
+        `#${ROOT_ID}, #${DETAIL_ROOT_ID}, #${TOGGLE_ID}, #${BOOKMARKS_LIST_ID}, #${MEDIA_MODAL_ID}, #${VIEW_TOGGLE_ID}, #${SEARCH_BUTTON_ID}, #${BACK_BUTTON_ID}`
       )
     );
   };
