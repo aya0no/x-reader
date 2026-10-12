@@ -68,7 +68,8 @@ const check = async (name, run) => { await run(); console.log(`PASS ${name}`); p
   });
 
   await check("search button and floating button spacing", async () => {
-    const ids = ["#xra-back-button", "#xra-settings-button", "#xra-search-button", "#xra-bookmarks-list", "#xra-toggle"];
+    const ids = ["#xra-back-button", "#xra-settings-button", "#xra-home-button", "#xra-search-button", "#xra-bookmarks-list", "#xra-toggle"];
+    assert.deepEqual(await page.locator("#xra-navigation-dock > button").evaluateAll(nodes => nodes.map(node => node.id)), ["xra-back-button", "xra-search-button", "xra-bookmarks-list", "xra-settings-button", "xra-home-button"]);
     const boxes = await Promise.all(ids.map(id => page.locator(id).boundingBox()));
     assert.ok(boxes.every(Boolean));
     for (let i = 0; i < boxes.length; i++) for (let j = i + 1; j < boxes.length; j++) assert.ok(boxes[i].x + boxes[i].width <= boxes[j].x || boxes[j].x + boxes[j].width <= boxes[i].x);
@@ -122,7 +123,8 @@ const check = async (name, run) => { await run(); console.log(`PASS ${name}`); p
     await page.waitForURL("https://x.com/i/bookmarks");
     await page.waitForSelector(".xra-card");
     assert.equal(await page.getByRole("tab", { name: "保存" }).getAttribute("aria-selected"), "true");
-    await page.getByRole("tab", { name: "ホーム" }).click();
+    await page.locator("#xra-home-button").click();
+    await page.waitForURL("https://x.com/home");
     await page.waitForURL("https://x.com/home");
     await page.waitForSelector(".xra-card");
   });

@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         X Reader Accordion v7.0.4-step11-light
 // @namespace    local.x-reader-accordion
-// @version      7.0.4.14.15
+// @version      7.0.4.14.16
 // @description  検索、閲覧位置の復元、画像送り、返信・引用表示に対応した軽量なX Readerです。
 // @match        https://x.com/*
 // @match        https://twitter.com/*
@@ -29,6 +29,7 @@
   const BACK_BUTTON_ID = "xra-back-button";
   const POST_MENU_ID = "xra-post-menu";
   const SETTINGS_BUTTON_ID = "xra-settings-button";
+  const HOME_BUTTON_ID = "xra-home-button";
   const SETTINGS_MENU_ID = "xra-settings-menu";
   const VIEW_MODE_KEY = "xra-feed-view-mode";
   const SWIPE_MIN_DISTANCE = 58;
@@ -902,6 +903,11 @@
       position: static; width: 44px; height: 44px; margin: 0; flex: 0 0 44px;
       border: 0; box-shadow: none; background: transparent; color: #222;
     }
+    #${HOME_BUTTON_ID} svg {
+      display: block; width: 20px; height: 20px; fill: none; stroke: currentColor;
+      stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round;
+    }
+    #${HOME_BUTTON_ID}[data-active="true"] { border-radius: 50%; background: #171717; color: #fff; }
     #${TOGGLE_ID} {
       width: 104px; height: 44px; right: max(12px, env(safe-area-inset-right, 0px));
       bottom: calc(18px + env(safe-area-inset-bottom, 0px)); z-index: 2147483301;
@@ -919,9 +925,9 @@
     #${TOGGLE_ID}[aria-checked="true"] .xra-toggle-reader,
     #${TOGGLE_ID}[aria-checked="false"] .xra-toggle-native { color: #fff; }
     @media (max-width: 350px) {
-      #xra-navigation-dock { left: 8px; gap: 2px; padding: 4px; }
+      #xra-navigation-dock { left: 8px; gap: 0; padding: 4px; }
       #xra-navigation-dock > button { flex-basis: 40px; width: 40px; height: 44px; }
-      #${TOGGLE_ID} { right: 8px; bottom: calc(17px + env(safe-area-inset-bottom, 0px)); }
+      #${TOGGLE_ID} { width: 90px; right: 8px; bottom: calc(17px + env(safe-area-inset-bottom, 0px)); font-size: 10px; }
     }
     .xra-list { padding-bottom: calc(100px + env(safe-area-inset-bottom, 0px)); }
     #${DETAIL_ROOT_ID} { padding-bottom: calc(100px + env(safe-area-inset-bottom, 0px)); }
@@ -1404,6 +1410,7 @@
     if (!visible) { existing?.remove(); return; }
     if (existing) {
       existing.querySelector(`#${SEARCH_BUTTON_ID}`).dataset.active = String(activeSectionId === "search");
+      existing.querySelector(`#${HOME_BUTTON_ID}`).dataset.active = String(activeSectionId === "following");
       return;
     }
     const dock = document.createElement("nav"); dock.id = "xra-navigation-dock"; dock.setAttribute("aria-label", "操作メニュー");
@@ -1424,9 +1431,12 @@
     const searchButton = document.createElement("button"); searchButton.id = SEARCH_BUTTON_ID; searchButton.type = "button"; searchButton.setAttribute("aria-label", "検索を開く"); searchButton.dataset.active = String(activeSectionId === "search"); searchButton.appendChild(createNavigationIcon("M10.5 18a7.5 7.5 0 1 0 0-15 7.5 7.5 0 0 0 0 15Zm5.5-2 5 5"));
     searchButton.addEventListener("click", () => { if (activeSectionId === "search") document.getElementById(ROOT_ID)?.querySelector(".xra-search-input")?.focus(); else navigateReader(`${location.origin}/explore`); });
     const settingsButton = document.createElement("button"); settingsButton.id = SETTINGS_BUTTON_ID; settingsButton.type = "button"; settingsButton.setAttribute("aria-label", "設定を開く");
-    const settingsIcon = createNavigationIcon("M10 2h4l.5 2.1 1.7.7 1.9-1 2 3.5-1.5 1.4.2 1.8 1.5 1.4-2 3.5-1.9-1-1.7.7L14 22h-4l-.5-2.1-1.7-.7-1.9 1-2-3.5 1.5-1.4-.2-1.8-1.5-1.4 2-3.5 1.9 1 1.7-.7L10 2Zm2 7a3 3 0 1 0 0 6 3 3 0 0 0 0-6Z");
+    const settingsIcon = createNavigationIcon("M10 2h4l.5 2.2 1.5.6 1.9-1.1 2.8 2.8-1.1 1.9.6 1.5L22 10v4l-2.2.5-.6 1.5 1.1 1.9-2.8 2.8-1.9-1.1-1.5.6L14 22h-4l-.5-2.2-1.5-.6-1.9 1.1-2.8-2.8 1.1-1.9-.6-1.5L2 14v-4l2.2-.5.6-1.5-1.1-1.9 2.8-2.8 1.9 1.1 1.5-.6L10 2Z M12 9a3 3 0 1 0 0 6 3 3 0 0 0 0-6Z");
     settingsButton.appendChild(settingsIcon); settingsButton.addEventListener("click", openSettingsMenu);
-    dock.append(backButton, searchButton, bookmarksList, settingsButton);
+    const homeButton = document.createElement("button"); homeButton.id = HOME_BUTTON_ID; homeButton.type = "button"; homeButton.setAttribute("aria-label", "ホームに戻る"); homeButton.dataset.active = String(activeSectionId === "following");
+    homeButton.appendChild(createNavigationIcon("M3 10.5 12 3l9 7.5V21h-7v-6h-4v6H3V10.5Z"));
+    homeButton.addEventListener("click", () => { if (location.pathname === "/home") switchSection("following"); else navigateReader(`${location.origin}/home`); });
+    dock.append(backButton, searchButton, bookmarksList, settingsButton, homeButton);
     document.body.appendChild(dock);
   };
 
@@ -2133,10 +2143,10 @@
 
     return Boolean(
       element.matches?.(
-        `#xra-navigation-dock, #${ROOT_ID}, #${DETAIL_ROOT_ID}, #${TOGGLE_ID}, #${BOOKMARKS_LIST_ID}, #${MEDIA_MODAL_ID}, #${VIEW_TOGGLE_ID}, #${SEARCH_BUTTON_ID}, #${BACK_BUTTON_ID}, #${POST_MENU_ID}, #${SETTINGS_BUTTON_ID}, #${SETTINGS_MENU_ID}`
+        `#xra-navigation-dock, #${ROOT_ID}, #${DETAIL_ROOT_ID}, #${TOGGLE_ID}, #${BOOKMARKS_LIST_ID}, #${MEDIA_MODAL_ID}, #${VIEW_TOGGLE_ID}, #${SEARCH_BUTTON_ID}, #${BACK_BUTTON_ID}, #${POST_MENU_ID}, #${SETTINGS_BUTTON_ID}, #${HOME_BUTTON_ID}, #${SETTINGS_MENU_ID}`
       ) ||
       element.closest?.(
-        `#xra-navigation-dock, #${ROOT_ID}, #${DETAIL_ROOT_ID}, #${TOGGLE_ID}, #${BOOKMARKS_LIST_ID}, #${MEDIA_MODAL_ID}, #${VIEW_TOGGLE_ID}, #${SEARCH_BUTTON_ID}, #${BACK_BUTTON_ID}, #${POST_MENU_ID}, #${SETTINGS_BUTTON_ID}, #${SETTINGS_MENU_ID}`
+        `#xra-navigation-dock, #${ROOT_ID}, #${DETAIL_ROOT_ID}, #${TOGGLE_ID}, #${BOOKMARKS_LIST_ID}, #${MEDIA_MODAL_ID}, #${VIEW_TOGGLE_ID}, #${SEARCH_BUTTON_ID}, #${BACK_BUTTON_ID}, #${POST_MENU_ID}, #${SETTINGS_BUTTON_ID}, #${HOME_BUTTON_ID}, #${SETTINGS_MENU_ID}`
       )
     );
   };
