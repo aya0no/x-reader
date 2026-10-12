@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         X Reader Accordion v7.0.4-step11-light
 // @namespace    local.x-reader-accordion
-// @version      7.0.4.14.9
+// @version      7.0.4.14.10
 // @description  検索、閲覧位置の復元、画像送り、返信・引用表示に対応した軽量なX Readerです。
 // @match        https://x.com/*
 // @match        https://twitter.com/*
@@ -219,8 +219,8 @@
       display: flex;
       align-items: center;
       justify-content: center;
-      width: 44px;
-      height: 44px;
+      width: 50px;
+      height: 50px;
       padding: 0;
       border: 1px solid #bdbdbd;
       border-radius: 50%;
@@ -234,8 +234,8 @@
 
     #${TOGGLE_ID} svg {
       display: block;
-      width: 20px;
-      height: 20px;
+      width: 24px;
+      height: 24px;
       color: currentColor !important;
       fill: none !important;
       stroke: currentColor !important;
@@ -842,6 +842,7 @@
       width: 44px; height: 44px;
       touch-action: manipulation;
     }
+    #${TOGGLE_ID} { width: 50px; height: 50px; bottom: calc(13px + env(safe-area-inset-bottom, 0px)); }
     #${TOGGLE_ID} { right: 12px; }
     #${BOOKMARKS_LIST_ID} { right: 64px; }
     #${VIEW_TOGGLE_ID} { right: 116px; }
@@ -865,6 +866,7 @@
     #${SEARCH_BUTTON_ID}:active, #${BACK_BUTTON_ID}:active, #${SETTINGS_BUTTON_ID}:active { transform: scale(.96); }
     @media (max-width: 350px) {
       #${TOGGLE_ID}, #${BOOKMARKS_LIST_ID}, #${VIEW_TOGGLE_ID}, #${SEARCH_BUTTON_ID}, #${BACK_BUTTON_ID}, #${SETTINGS_BUTTON_ID} { width: 40px; height: 40px; }
+      #${TOGGLE_ID} { width: 46px; height: 46px; bottom: calc(13px + env(safe-area-inset-bottom, 0px)); }
       #${BACK_BUTTON_ID} { left: 10px; }
       #${SETTINGS_BUTTON_ID} { left: 58px; }
       #${SEARCH_BUTTON_ID} { right: 160px; }
@@ -1403,7 +1405,7 @@
     const button = document.getElementById(TOGGLE_ID);
     if (!button) return;
 
-    const readerIsOpen = Boolean(document.getElementById(ROOT_ID));
+    const readerIsOpen = Boolean(document.getElementById(ROOT_ID)) || (isDetailPage() && readSetting("xra-enabled") !== "false");
     const mode = readerIsOpen ? "normal" : "reader";
     const utilityPage = !isDetailPage() && !isReaderFeedPage();
     const label = utilityPage ? "X Readerのホームに戻る" : readerIsOpen ? "通常表示に戻す" : "簡素表示に切り替える";
@@ -1421,8 +1423,8 @@
     if (button.title !== title) button.title = title;
   };
 
-  const enableReader = () => { writeSetting("xra-enabled", "true"); if (isDetailPage()) { closeFeedMediaModal(); document.getElementById(ROOT_ID)?.remove(); renderToggleButton(); return; } if (!isReaderFeedPage()) { navigateReader(`${location.origin}/home`); return; } createRoot(); renderToggleButton(); };
-  const disableReader = () => { saveCurrentPosition(); writeSetting("xra-enabled", "false"); closeFeedMediaModal(); document.getElementById(ROOT_ID)?.remove(); renderToggleButton(); };
+  const enableReader = () => { writeSetting("xra-enabled", "true"); if (isDetailPage()) { closeFeedMediaModal(); document.getElementById(ROOT_ID)?.remove(); document.documentElement.classList.add("xra-detail-page"); simplifyDetailPage(); renderToggleButton(); return; } if (!isReaderFeedPage()) { navigateReader(`${location.origin}/home`); return; } createRoot(); renderToggleButton(); };
+  const disableReader = () => { saveCurrentPosition(); writeSetting("xra-enabled", "false"); closeFeedMediaModal(); document.getElementById(ROOT_ID)?.remove(); if (isDetailPage()) { clearDetailSimplification(); document.documentElement.classList.remove("xra-detail-page"); } renderToggleButton(); };
   const addToggle = () => {
     let button = document.getElementById(TOGGLE_ID);
     if (!button) {
@@ -1430,7 +1432,7 @@
       button.id = TOGGLE_ID;
       button.type = "button";
       button.addEventListener("click", () => {
-        document.getElementById(ROOT_ID) ? disableReader() : enableReader();
+        (document.getElementById(ROOT_ID) || (isDetailPage() && readSetting("xra-enabled") !== "false")) ? disableReader() : enableReader();
       });
       document.body.appendChild(button);
     }
@@ -2039,7 +2041,8 @@
 
   const syncPageMode = () => {
     const detail = isDetailPage();
-    document.documentElement.classList.toggle("xra-detail-page", detail);
+    const detailReaderEnabled = detail && readSetting("xra-enabled") !== "false";
+    document.documentElement.classList.toggle("xra-detail-page", detailReaderEnabled);
 
     if (detail) {
       saveReadingPosition(document.getElementById(ROOT_ID));
@@ -2047,8 +2050,9 @@
       if (previous && previous.dataset.statusId !== getCurrentStatusId()) clearDetailSimplification();
       closeFeedMediaModal();
       document.getElementById(ROOT_ID)?.remove();
+      if (detailReaderEnabled) simplifyDetailPage();
+      else clearDetailSimplification();
       renderToggleButton();
-      simplifyDetailPage();
       return;
     }
 
@@ -2107,10 +2111,10 @@ const start = () => {
     window.addEventListener("pageshow", () => { lastUrl = location.href; detectInitialSection(); syncPageMode(); });
 
     const observer = new MutationObserver(mutations => {
-      // 自分で追加したボタンや専用画面だけの変化では再処理しない。
-      if (mutations.length && mutations.every(isOwnUiMutation)) return;
-
+      // Xがボタンを取り除いた場合は、自分のUIだけの変化でも復元する。
+      if (!document.getElementById(STYLE_ID)) addStyle();
       if (!document.getElementById(TOGGLE_ID)) addToggle();
+      if (mutations.length && mutations.every(isOwnUiMutation)) return;
 
       if (location.href !== lastUrl) {
         lastUrl = location.href;
@@ -2119,7 +2123,7 @@ const start = () => {
       }
 
       if (renderTimer) return;
-      renderTimer = setTimeout(() => { renderTimer = null; if (isDetailPage()) simplifyDetailPage(); else if (document.getElementById(ROOT_ID)) renderCurrentFeed(); }, 160);
+      renderTimer = setTimeout(() => { renderTimer = null; if (isDetailPage() && readSetting("xra-enabled") !== "false") simplifyDetailPage(); else if (document.getElementById(ROOT_ID)) renderCurrentFeed(); }, 160);
     });
 
     observer.observe(document.documentElement, { childList: true, characterData: true, subtree: true });

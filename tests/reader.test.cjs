@@ -44,6 +44,13 @@ const check = async (name, run) => { await run(); console.log(`PASS ${name}`); p
     assert.equal(await page.locator(".xra-card-bookmark").count(), 0);
   });
 
+  await check("larger toggle returns after X replaces it", async () => {
+    const box = await page.locator("#xra-toggle").boundingBox();
+    assert.ok(box.width >= 50 && box.height >= 50);
+    await page.locator("#xra-toggle").evaluate(node => node.remove());
+    await page.waitForSelector("#xra-toggle");
+  });
+
   await check("long press saves a feed post through X", async () => {
     await page.locator(".xra-card").first().evaluate(async card => {
       card.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, pointerType: "touch", button: 0, clientX: 140, clientY: 240 }));
@@ -87,6 +94,7 @@ const check = async (name, run) => { await run(); console.log(`PASS ${name}`); p
     await page.waitForURL("https://x.com/notifications");
     assert.equal(await page.evaluate(() => window.xraDocumentMarker), 1);
     assert.equal(await page.locator("#xra-root").count(), 0);
+    assert.ok(await page.locator("#xra-toggle").boundingBox());
     await page.getByRole("button", { name: "X Readerのホームに戻る" }).click();
     await page.waitForURL("https://x.com/home");
     await page.waitForSelector("#xra-root");
@@ -179,6 +187,15 @@ const check = async (name, run) => { await run(); console.log(`PASS ${name}`); p
     assert.equal((await page.locator(".xra-detail-like").first().textContent()).trim(), "♡ 65");
     assert.equal(await page.locator(".xra-detail-reply").count(), 2);
     assert.deepEqual(await page.locator(".xra-detail-reply").evaluateAll(nodes => nodes.map(node => node.dataset.statusId)), ["5001", "5002"]);
+  });
+
+  await check("detail toggle switches both ways", async () => {
+    assert.equal(await page.getByRole("button", { name: "通常表示に戻す" }).count(), 1);
+    await page.locator("#xra-toggle").click();
+    assert.equal(await page.locator("#xra-detail-root").count(), 0);
+    assert.equal(await page.locator("html.xra-detail-page").count(), 0);
+    await page.getByRole("button", { name: "簡素表示に切り替える" }).click();
+    await page.waitForSelector("#xra-detail-root");
   });
 
   await check("detail image gallery is color and stays in detail", async () => {
