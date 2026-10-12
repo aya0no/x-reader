@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         X Reader Accordion v7.0.4-step11-light
 // @namespace    local.x-reader-accordion
-// @version      7.0.4.14.7
+// @version      7.0.4.14.8
 // @description  検索、閲覧位置の復元、画像送り、返信・引用表示に対応した軽量なX Readerです。
 // @match        https://x.com/*
 // @match        https://twitter.com/*
@@ -148,6 +148,11 @@
     .xra-search-chips { display: flex; flex-wrap: wrap; gap: 6px; }
     .xra-search-chip, .xra-search-clear { min-height: 29px; padding: 0 10px; border: 1px solid #d1d1cd; border-radius: 15px; background: #fff; color: #333; font-size: 11px; }
     .xra-search-clear { color: #777; }
+    .xra-trend-heading { margin: 15px 18px 5px; color: #171717; font-size: 15px; font-weight: 700; }
+    .xra-trend-item { display: flex; flex-direction: column; align-items: flex-start; width: 100%; min-height: 66px; padding: 12px 18px; border: 0; border-bottom: 1px solid #e9e9e7; background: #fff; color: #171717; text-align: left; }
+    .xra-trend-item:active { background: #f3f3f1; }
+    .xra-trend-category, .xra-trend-volume { color: #707070; font-size: 11px; line-height: 1.35; }
+    .xra-trend-title { margin: 3px 0; font-size: 14px; font-weight: 650; line-height: 1.4; }
     .xra-context { margin-bottom: 5px; color: #777; font-size: 10.5px; }
     .xra-list { padding: 8px 0 76px; }
     .xra-card { position: relative; display: grid; grid-template-columns: minmax(0,1fr); gap: 8px; margin: 0 10px 8px; padding: 13px 14px; border: 1px solid #dededb; border-radius: 13px; background: #fff; cursor: pointer; -webkit-tap-highlight-color: transparent; }
@@ -1096,13 +1101,72 @@
     }
     return tools;
   };
+  // Xの探索画面に表示された話題だけを読み取り、検索画面に再表示する。
+  const readExploreTopics = () => {
+    const scope = document.querySelector('[data-testid="primaryColumn"]') || document.querySelector("main");
+    if (!scope) return [];
+    const nodes = scope.querySelectorAll('[data-testid="trend"], [data-testid="trendItem"], [data-testid="cellInnerDiv"] [role="link"]');
+    const topics = [];
+    const seen = new Set();
+    for (const node of nodes) {
+      if (node.closest(`#${ROOT_ID}`) || node.closest("article")) continue;
+      const texts = Array.from(node.querySelectorAll("span"))
+        .filter(span => !span.querySelector("span"))
+        .map(span => (span.textContent || "").replace(/\s+/g, " ").trim())
+        .filter(Boolean);
+      const metadata = value => /^(?:本日のニュース|今日のニュース|話題を検索|トレンド|Trending|もっと見る|Show more|\u2026|\.\.\.)$/i.test(value)
+        || /(?:トレンド|Trending|件のポスト|posts|日前|時間前)/i.test(value);
+      if (!node.matches('[data-testid="trend"], [data-testid="trendItem"]') && !texts.some(metadata)) continue;
+      const title = texts.find(value => value.length > 1 && !metadata(value) && !/^\d[\d,.]*$/.test(value));
+      if (!title || seen.has(title)) continue;
+      const href = node.closest('a[href*="/search?"]')?.getAttribute("href")
+        || node.querySelector('a[href*="/search?"]')?.getAttribute("href") || "";
+      let query = title;
+      try { query = new URL(href, location.origin).searchParams.get("q") || title; } catch {}
+      const index = texts.indexOf(title);
+      const category = texts.slice(0, index).find(metadata) || "";
+      const volume = texts.slice(index + 1).find(value => /(?:件のポスト|posts)/i.test(value)) || "";
+      seen.add(title);
+      topics.push({ title, query, category, volume });
+      if (topics.length >= 30) break;
+    }
+    return topics;
+  };
+
+  const renderExploreTopics = list => {
+    const topics = readExploreTopics();
+    const signature = JSON.stringify(topics);
+    if (list.dataset.trendSignature === signature) return;
+    list.dataset.trendSignature = signature;
+    list.replaceChildren();
+    const heading = document.createElement("h2"); heading.className = "xra-trend-heading"; heading.textContent = "話題";
+    list.appendChild(heading);
+    if (!topics.length) {
+      const message = document.createElement("div"); message.className = "xra-message";
+      message.textContent = "話題を読み込んでいます";
+      list.appendChild(message);
+      return;
+    }
+    topics.forEach(topic => {
+      const button = document.createElement("button"); button.type = "button"; button.className = "xra-trend-item";
+      const category = document.createElement("span"); category.className = "xra-trend-category"; category.textContent = topic.category;
+      const title = document.createElement("span"); title.className = "xra-trend-title"; title.textContent = topic.title;
+      const volume = document.createElement("span"); volume.className = "xra-trend-volume"; volume.textContent = topic.volume;
+      if (topic.category) button.appendChild(category);
+      button.appendChild(title);
+      if (topic.volume) button.appendChild(volume);
+      button.addEventListener("click", () => navigateSearch(topic.query, "top"));
+      list.appendChild(button);
+    });
+  };
+
   const renderCurrentFeed = () => {
     const section = currentSection();
     const list = document.querySelector(`.xra-section[data-section-id="${activeSectionId}"] .xra-list`);
     if (!section || !list) return;
     if (!section.url) { list.innerHTML = '<div class="xra-message">このリストのURLが未設定です。<br>スクリプト上部のCONFIG.sectionsへXリストURLを入力してください。</div>'; return; }
     const searchLanding = section.id === "search" && !currentSearchQuery();
-    if (searchLanding) { list.innerHTML = '<div class="xra-message">検索語を入力してください</div>'; return; }
+    if (searchLanding) { renderExploreTopics(list); tryRestorePosition(document.getElementById(ROOT_ID)); return; }
     const existing = new Set(Array.from(list.querySelectorAll(`[${CARD_ATTR}]`)).map(card => card.getAttribute(CARD_ATTR)));
     let added = 0;
     document.querySelectorAll("article").forEach(article => { if (article.closest(`#${ROOT_ID}`)) return; const key = getPostKey(article); if (!key || existing.has(key)) return; const card = createCard(article, { allowReplies: section.id === "search" }); if (!card) return; list.appendChild(card); existing.add(key); added += 1; });
@@ -1205,18 +1269,6 @@
     }, true);
   };
 
-  const findOwnProfileUrl = () => {
-    const selectors = ['a[data-testid="AppTabBar_Profile_Link"][href]', 'a[data-testid="SideNav_Profile_Link"][href]', 'nav a[aria-label="プロフィール"][href]', 'nav a[aria-label="Profile"][href]'];
-    for (const selector of selectors) {
-      const link = document.querySelector(selector);
-      if (!link) continue;
-      const url = new URL(link.getAttribute("href"), location.origin);
-      if (url.origin === location.origin && /^\/[A-Za-z0-9_]{1,15}\/?$/.test(url.pathname)) return `${location.origin}${url.pathname}`;
-    }
-    const switcher = document.querySelector('[data-testid="SideNav_AccountSwitcher_Button"]');
-    const handle = switcher?.textContent?.match(/@([A-Za-z0-9_]{1,15})/)?.[1];
-    return handle ? `${location.origin}/${handle}` : "";
-  };
   const openSettingsMenu = () => {
     if (document.getElementById(SETTINGS_MENU_ID)) return;
     const modal = document.createElement("div"); modal.id = SETTINGS_MENU_ID;
@@ -1224,12 +1276,8 @@
     const onKeyDown = event => { if (event.key === "Escape") close(); };
     const close = () => { document.removeEventListener("keydown", onKeyDown); modal.remove(); };
     const addItem = (label, action, className = "") => { const button = document.createElement("button"); button.type = "button"; button.className = `xra-post-menu-action ${className}`.trim(); button.setAttribute("role", "menuitem"); button.textContent = label; button.addEventListener("click", () => { close(); action(); }); panel.appendChild(button); };
-    addItem("マイページ", () => {
-      const url = findOwnProfileUrl();
-      if (url) navigateReader(url);
-      else { saveCurrentPosition(); document.getElementById(ROOT_ID)?.remove(); renderToggleButton(); document.querySelector('[data-testid="AppTabBar_Profile_Link"], [data-testid="SideNav_Profile_Link"]')?.click(); }
-    });
-    addItem("通知", () => navigateReader(`${location.origin}/notifications`));
+    addItem("マイページ", () => navigateReader("https://x.com/ngmkkrm"));
+    addItem("通知", () => navigateReader("https://x.com/notifications"));
     addItem("閉じる", () => {}, "xra-post-menu-close");
     modal.appendChild(panel); modal.addEventListener("click", event => { if (event.target === modal) close(); });
     document.body.appendChild(modal); document.addEventListener("keydown", onKeyDown);
