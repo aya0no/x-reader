@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         X Reader Accordion v7.0.4-step11-light
 // @namespace    local.x-reader-accordion
-// @version      7.0.4.14.19
+// @version      7.0.4.14.20
 // @description  検索、閲覧位置の復元、画像送り、返信・引用表示に対応した軽量なX Readerです。
 // @match        https://x.com/*
 // @match        https://twitter.com/*
@@ -32,6 +32,8 @@
   const HOME_BUTTON_ID = "xra-home-button";
   const SETTINGS_MENU_ID = "xra-settings-menu";
   const SECTION_SETTINGS_ID = "xra-section-settings";
+  const TRANSITION_ID = "xra-transition-snapshot";
+  const TRANSITION_KEY = "xra-transition-snapshot-v1";
   const SECTION_SETTINGS_KEY = "xra-section-settings-v1";
   const VIEW_MODE_KEY = "xra-feed-view-mode";
   const SWIPE_MIN_DISTANCE = 58;
@@ -66,6 +68,44 @@
   };
   const saveReadingPosition = root => { if (root?.isConnected && root.xraPath === currentPageKey() && !root.xraRestore) storePosition(root.xraPath, captureReadingPosition(root)); };
   const saveCurrentPosition = () => { saveReadingPosition(document.getElementById(ROOT_ID)); saveReadingPosition(document.getElementById(DETAIL_ROOT_ID)); };
+  const finishReaderTransition = immediate => {
+    const host = document.getElementById(TRANSITION_ID);
+    if (!host) { if (immediate) { try { sessionStorage.removeItem(TRANSITION_KEY); } catch {} } return; }
+    clearTimeout(host.xraTimer);
+    if (immediate) { host.remove(); try { sessionStorage.removeItem(TRANSITION_KEY); } catch {} return; }
+    if (host.dataset.closing === "true") return;
+    host.dataset.closing = "true";
+    requestAnimationFrame(() => { host.style.opacity = "0"; });
+    setTimeout(() => { host.remove(); try { sessionStorage.removeItem(TRANSITION_KEY); } catch {} }, 180);
+  };
+  const mountReaderTransition = (clone, scrollTop = 0) => {
+    finishReaderTransition(true);
+    const host = document.createElement("div"); host.id = TRANSITION_ID; host.setAttribute("aria-hidden", "true");
+    host.style.cssText = "position:fixed;inset:0;z-index:2147483190;pointer-events:none;opacity:1;transition:opacity .18s ease;background:#fbfbfa";
+    const shadow = host.attachShadow({ mode: "closed" });
+    const style = document.createElement("style");
+    style.textContent = `${css}\n#${ROOT_ID},#${DETAIL_ROOT_ID}{position:absolute!important;inset:0!important}button,a{pointer-events:none!important}`;
+    shadow.append(style, clone);
+    document.body.appendChild(host);
+    clone.scrollTop = scrollTop;
+    host.xraTimer = setTimeout(() => finishReaderTransition(false), 6500);
+  };
+  const showReaderTransition = targetUrl => {
+    const source = document.getElementById(DETAIL_ROOT_ID) || document.getElementById(ROOT_ID);
+    if (!source) return;
+    const clone = source.cloneNode(true);
+    const target = targetUrl ? new URL(targetUrl, location.origin) : null;
+    mountReaderTransition(clone, source.scrollTop);
+    try { sessionStorage.setItem(TRANSITION_KEY, JSON.stringify({ html: source.outerHTML, scrollTop: source.scrollTop, target: target ? `${target.pathname}${target.search}` : "", savedAt: Date.now() })); } catch {}
+  };
+  const restoreReaderTransition = () => {
+    let saved = null;
+    try { saved = JSON.parse(sessionStorage.getItem(TRANSITION_KEY) || "null"); sessionStorage.removeItem(TRANSITION_KEY); } catch {}
+    if (!saved?.html || Date.now() - saved.savedAt > 8000 || (saved.target && saved.target !== `${location.pathname}${location.search}`)) return;
+    const container = document.createElement("div"); container.innerHTML = saved.html;
+    const clone = container.firstElementChild;
+    if (clone) mountReaderTransition(clone, Number(saved.scrollTop) || 0);
+  };
   const cancelReaderActivity = () => {
     readerGeneration += 1;
     clearTimeout(renderTimer); renderTimer = null;
@@ -79,8 +119,9 @@
       root.xraLoadTimers = [];
     });
   };
-  const beginReaderNavigation = () => {
+  const beginReaderNavigation = targetUrl => {
     if (navigationPending && Date.now() - navigationPending.started < 1500) return false;
+    showReaderTransition(targetUrl);
     saveCurrentPosition();
     cancelReaderActivity();
     const attempt = { started: Date.now(), generation: readerGeneration };
@@ -113,7 +154,7 @@
   const navigateReader = (url, selectors) => {
     const target = new URL(url, location.origin);
     if (target.href === location.href) return;
-    if (!beginReaderNavigation()) return;
+    if (!beginReaderNavigation(target.href)) return;
     const link = findNativeLink(target.href, selectors);
     if (link) link.click();
     else location.assign(target.href);
@@ -1397,12 +1438,12 @@
     if (!section || !list) return;
     if (!section.url) { list.innerHTML = '<div class="xra-message">このリストのURLが未設定です。<br>スクリプト上部のCONFIG.sectionsへXリストURLを入力してください。</div>'; return; }
     const searchLanding = section.id === "search" && !currentSearchQuery();
-    if (searchLanding) { renderExploreTopics(list); tryRestorePosition(document.getElementById(ROOT_ID)); return; }
-    if (section.id === "notifications") { renderNotifications(list); tryRestorePosition(document.getElementById(ROOT_ID)); return; }
+    if (searchLanding) { renderExploreTopics(list); tryRestorePosition(document.getElementById(ROOT_ID)); if (list.querySelector(".xra-trend-item")) finishReaderTransition(false); return; }
+    if (section.id === "notifications") { renderNotifications(list); tryRestorePosition(document.getElementById(ROOT_ID)); if (list.querySelector(".xra-notification-item")) finishReaderTransition(false); return; }
     const existing = new Set(Array.from(list.querySelectorAll(`[${CARD_ATTR}]`)).map(card => card.getAttribute(CARD_ATTR)));
     let added = 0;
     document.querySelectorAll("article").forEach(article => { if (article.closest(`#${ROOT_ID}`)) return; const key = getPostKey(article); if (!key || existing.has(key)) return; const card = createCard(article, { allowReplies: ["search", "profile"].includes(section.id) }); if (!card) return; list.appendChild(card); existing.add(key); added += 1; });
-    if (list.querySelector(".xra-card")) list.querySelector(".xra-message")?.remove();
+    if (list.querySelector(".xra-card")) { list.querySelector(".xra-message")?.remove(); finishReaderTransition(false); }
     else renderLoadState(list, section.id === "search" ? "検索結果" : "投稿");
     tryRestorePosition(root);
   };
@@ -1650,7 +1691,7 @@
   };
 
   const enableReader = () => { writeSetting("xra-enabled", "true"); if (isDetailPage()) { closeFeedMediaModal(); document.getElementById(ROOT_ID)?.remove(); document.documentElement.classList.add("xra-detail-page"); simplifyDetailPage(); renderToggleButton(); return; } if (!isReaderFeedPage()) { navigateReader(`${location.origin}/home`); return; } createRoot(); renderToggleButton(); };
-  const disableReader = () => { saveCurrentPosition(); cancelReaderActivity(); navigationPending = null; writeSetting("xra-enabled", "false"); closeFeedMediaModal(); document.getElementById(ROOT_ID)?.remove(); if (isDetailPage()) { clearDetailSimplification(); document.documentElement.classList.remove("xra-detail-page"); } renderToggleButton(); };
+  const disableReader = () => { saveCurrentPosition(); cancelReaderActivity(); navigationPending = null; finishReaderTransition(true); writeSetting("xra-enabled", "false"); closeFeedMediaModal(); document.getElementById(ROOT_ID)?.remove(); if (isDetailPage()) { clearDetailSimplification(); document.documentElement.classList.remove("xra-detail-page"); } renderToggleButton(); };
   const addToggle = () => {
     let button = document.getElementById(TOGGLE_ID);
     if (!button) {
@@ -2254,7 +2295,7 @@
     if (!isDetailPage() || navigationPending || readSetting("xra-enabled") === "false") return;
 
     const mainArticle = markMainDetailArticle();
-    if (mainArticle) createDetailReader(mainArticle);
+    if (mainArticle) { createDetailReader(mainArticle); finishReaderTransition(false); }
     else { const root = document.getElementById(DETAIL_ROOT_ID); if (root?.dataset.statusId === getCurrentStatusId()) { renderDetailReplies(root, null); } }
   };
 
@@ -2311,10 +2352,10 @@
 
     return Boolean(
       element.matches?.(
-        `#xra-navigation-dock, #${ROOT_ID}, #${DETAIL_ROOT_ID}, #${TOGGLE_ID}, #${BOOKMARKS_LIST_ID}, #${MEDIA_MODAL_ID}, #${VIEW_TOGGLE_ID}, #${SEARCH_BUTTON_ID}, #${BACK_BUTTON_ID}, #${POST_MENU_ID}, #${SETTINGS_BUTTON_ID}, #${HOME_BUTTON_ID}, #${SETTINGS_MENU_ID}, #${SECTION_SETTINGS_ID}`
+        `#xra-navigation-dock, #${ROOT_ID}, #${DETAIL_ROOT_ID}, #${TOGGLE_ID}, #${BOOKMARKS_LIST_ID}, #${MEDIA_MODAL_ID}, #${VIEW_TOGGLE_ID}, #${SEARCH_BUTTON_ID}, #${BACK_BUTTON_ID}, #${POST_MENU_ID}, #${SETTINGS_BUTTON_ID}, #${HOME_BUTTON_ID}, #${SETTINGS_MENU_ID}, #${SECTION_SETTINGS_ID}, #${TRANSITION_ID}`
       ) ||
       element.closest?.(
-        `#xra-navigation-dock, #${ROOT_ID}, #${DETAIL_ROOT_ID}, #${TOGGLE_ID}, #${BOOKMARKS_LIST_ID}, #${MEDIA_MODAL_ID}, #${VIEW_TOGGLE_ID}, #${SEARCH_BUTTON_ID}, #${BACK_BUTTON_ID}, #${POST_MENU_ID}, #${SETTINGS_BUTTON_ID}, #${HOME_BUTTON_ID}, #${SETTINGS_MENU_ID}, #${SECTION_SETTINGS_ID}`
+        `#xra-navigation-dock, #${ROOT_ID}, #${DETAIL_ROOT_ID}, #${TOGGLE_ID}, #${BOOKMARKS_LIST_ID}, #${MEDIA_MODAL_ID}, #${VIEW_TOGGLE_ID}, #${SEARCH_BUTTON_ID}, #${BACK_BUTTON_ID}, #${POST_MENU_ID}, #${SETTINGS_BUTTON_ID}, #${HOME_BUTTON_ID}, #${SETTINGS_MENU_ID}, #${SECTION_SETTINGS_ID}, #${TRANSITION_ID}`
       )
     );
   };
@@ -2341,6 +2382,7 @@
     return true;
   };
   const start = () => {
+    restoreReaderTransition();
     addStyle();
     detectInitialSection();
     addToggle();
