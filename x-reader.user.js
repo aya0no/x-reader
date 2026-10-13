@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         X Reader Accordion v7.0.4-step11-light
 // @namespace    local.x-reader-accordion
-// @version      7.0.4.14.18
+// @version      7.0.4.14.19
 // @description  検索、閲覧位置の復元、画像送り、返信・引用表示に対応した軽量なX Readerです。
 // @match        https://x.com/*
 // @match        https://twitter.com/*
@@ -268,6 +268,7 @@
     .xra-media:first-child { display: block; }
     .xra-media img { display: block; width: 100%; height: 100%; object-fit: cover; ${CONFIG.monochrome ? "filter: grayscale(1);" : ""} }
     .xra-link-card { display: block; width: 100%; margin-top: 8px; padding: 7px 8px; overflow: hidden; border: 1px solid #d8d8d5; border-radius: 9px; background: #fdfdfc; color: #171717; text-align: left; }
+    .xra-link-image { display: block; width: calc(100% + 16px); height: 112px; margin: -7px -8px 7px; background: #ededeb; object-fit: cover; filter: grayscale(1); }
     .xra-link-site { overflow: hidden; color: #777; font-size: 9.5px; text-overflow: ellipsis; white-space: nowrap; }
     .xra-link-title { display: -webkit-box; margin-top: 1px; overflow: hidden; font-size: 11.5px; font-weight: 650; line-height: 1.35; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
     .xra-link-summary { display: -webkit-box; margin-top: 2px; overflow: hidden; color: #666; font-size: 10.5px; line-height: 1.35; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
@@ -280,6 +281,7 @@
     #${ROOT_ID}[data-view-mode="comfortable"] .xra-time { display: none; }
     #${ROOT_ID}[data-view-mode="comfortable"] .xra-text { display: block; overflow: visible; font-size: 15px; line-height: 1.65; -webkit-line-clamp: unset; }
     #${ROOT_ID}[data-view-mode="comfortable"] .xra-link-card { margin-top: 13px; padding: 11px 12px; border-radius: 10px; }
+    #${ROOT_ID}[data-view-mode="comfortable"] .xra-link-image { width: calc(100% + 24px); height: auto; max-height: 360px; margin: -11px -12px 10px; aspect-ratio: 1.91/1; object-fit: cover; filter: none; }
     #${ROOT_ID}[data-view-mode="comfortable"] .xra-link-site { font-size: 10.5px; }
     #${ROOT_ID}[data-view-mode="comfortable"] .xra-link-title { margin-top: 3px; font-size: 14px; line-height: 1.45; }
     #${ROOT_ID}[data-view-mode="comfortable"] .xra-link-summary { margin-top: 4px; font-size: 12px; line-height: 1.45; }
@@ -1073,7 +1075,32 @@
     const host = new URL(url).hostname.replace(/^www\./, "");
     const site = domainLine || host;
     const contentLines = lines.filter(line => line !== domainLine && line !== url && line !== href);
-    return { url, site, title: contentLines[0] || "リンクを開く", summary: contentLines.slice(1).join(" ").slice(0, 180) };
+    const imageCandidates = [];
+    const addImageCandidate = (source, element, baseScore = 0) => {
+      if (!source) return;
+      let imageUrl = "";
+      try {
+        const parsed = new URL(source, location.href);
+        if (!/^https?:$/.test(parsed.protocol)) return;
+        imageUrl = parsed.href;
+      } catch { return; }
+      if (/profile_images|emoji|hashflags|badge/i.test(imageUrl)) return;
+      const width = Number(element?.naturalWidth || element?.videoWidth || element?.getAttribute?.("width") || 0);
+      const height = Number(element?.naturalHeight || element?.videoHeight || element?.getAttribute?.("height") || 0);
+      if (width && height && width < 80 && height < 80) return;
+      const score = baseScore + (imageUrl.includes("/card_img/") ? 1000000 : 0) + width * height;
+      imageCandidates.push({ url: imageUrl, score });
+    };
+    wrapper.querySelectorAll("img[src], video[poster]").forEach(media => {
+      const source = media.tagName === "VIDEO" ? media.poster || media.getAttribute("poster") || "" : media.currentSrc || media.src || media.getAttribute("src") || "";
+      addImageCandidate(source, media, 1000);
+    });
+    wrapper.querySelectorAll('[style*="background-image"]').forEach(element => {
+      const background = element.style?.backgroundImage || element.getAttribute("style") || "";
+      addImageCandidate(background.match(/url\(["']?(.*?)["']?\)/)?.[1] || "", element, 500);
+    });
+    imageCandidates.sort((a, b) => b.score - a.score);
+    return { url, site, title: contentLines[0] || "リンクを開く", summary: contentLines.slice(1).join(" ").slice(0, 180), imageUrl: imageCandidates[0]?.url || "" };
   };
   const getLargeMediaUrl = source => {
     try {
@@ -1193,6 +1220,9 @@
     meta.append(handleEl, timeEl); main.appendChild(meta); if (text) main.appendChild(textEl);
     if (linkPreview) {
       const linkCard = document.createElement("button"); linkCard.className = "xra-link-card"; linkCard.type = "button"; linkCard.setAttribute("aria-label", `${linkPreview.title}を開く`);
+      if (linkPreview.imageUrl) {
+        const image = document.createElement("img"); image.className = "xra-link-image"; image.src = getLargeMediaUrl(linkPreview.imageUrl); image.alt = ""; image.loading = "lazy"; image.decoding = "async"; image.addEventListener("error", () => image.remove()); linkCard.appendChild(image);
+      }
       const site = document.createElement("div"); site.className = "xra-link-site"; site.textContent = linkPreview.site;
       const title = document.createElement("div"); title.className = "xra-link-title"; title.textContent = linkPreview.title;
       linkCard.append(site, title);

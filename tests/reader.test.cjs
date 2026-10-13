@@ -5,9 +5,10 @@ const { chromium } = require(process.env.CODEX_PRIMARY_RUNTIME_NODE_MODULES ? pa
 const script = fs.readFileSync(path.join(__dirname, "../x-reader.user.js"), "utf8");
 const identity = (handle = "reader", name = "テスト投稿者") => `<div data-testid="User-Name"><a href="/${handle}"><span>${name}</span></a><span>@${handle}</span></div>`;
 const photos = count => `<div data-testid="tweetPhoto">${Array.from({ length: count }, (_, i) => `<img src="https://x.com/fixture-${i + 1}.svg" width="320" height="200">`).join("")}</div>`;
+const linkCard = () => '<a href="https://news.yahoo.co.jp/articles/test"><div data-testid="card.wrapper"><img src="https://x.com/fixture-link.svg" width="600" height="314"><span>news.yahoo.co.jp</span><span>Yahoo!ニュースの見出し</span></div></a>';
 const quote = (id = "9900", text = "引用元の本文", count = 1) => `<div role="link" data-quote>${identity("quoted", "引用元")}<a href="/quoted/status/${id}"><time datetime="2026-10-09T02:00:00Z">1日前</time></a>${text ? `<div data-testid="tweetText">${text}</div>` : ""}${photos(count)}<button data-testid="like">9,999</button></div>`;
-const post = (id, options = {}) => `<article data-native="${id}">${options.repost ? '<div data-testid="socialContext">someoneがリポスト</div>' : ""}${identity()}${options.text === "" ? "" : `<div data-testid="tweetText">${options.text || `投稿${id}の本文です。見た目を保ったまま読むテストです。`}</div>`}${options.quote || ""}${photos(options.images || 0)}<a href="/reader/status/${id}"><time datetime="2026-10-10T01:30:00Z">1時間</time></a><button data-testid="like" ${options.likes != null ? `aria-label="${options.likes} いいね"` : ""}>${options.impressions ? `<span data-testid="analytics">${options.impressions}</span><span data-testid="app-text-transition-container">${options.likes}</span>` : "12"}</button><button data-testid="bookmark" onclick="this.dataset.testid = this.dataset.testid === 'bookmark' ? 'removeBookmark' : 'bookmark'">保存</button></article>`;
-const homePosts = Array.from({ length: 30 }, (_, i) => post(String(1000 - i), { text: i === 0 ? "おすすめのレシピも消さずに表示" : undefined, images: i === 0 ? 3 : 0, repost: i === 1 })).join("");
+const post = (id, options = {}) => `<article data-native="${id}">${options.repost ? '<div data-testid="socialContext">someoneがリポスト</div>' : ""}${identity()}${options.text === "" ? "" : `<div data-testid="tweetText">${options.text || `投稿${id}の本文です。見た目を保ったまま読むテストです。`}</div>`}${options.quote || ""}${options.link ? linkCard() : ""}${photos(options.images || 0)}<a href="/reader/status/${id}"><time datetime="2026-10-10T01:30:00Z">1時間</time></a><button data-testid="like" ${options.likes != null ? `aria-label="${options.likes} いいね"` : ""}>${options.impressions ? `<span data-testid="analytics">${options.impressions}</span><span data-testid="app-text-transition-container">${options.likes}</span>` : "12"}</button><button data-testid="bookmark" onclick="this.dataset.testid = this.dataset.testid === 'bookmark' ? 'removeBookmark' : 'bookmark'">保存</button></article>`;
+const homePosts = Array.from({ length: 30 }, (_, i) => post(String(1000 - i), { text: i === 0 ? "おすすめのレシピも消さずに表示" : undefined, images: i === 0 ? 3 : 0, link: i === 2, repost: i === 1 })).join("");
 const main = post("5000", { text: '本文と<a href="https://example.org/story">関連リンク</a>', quote: quote(), images: 2, likes: 65, impressions: "3,142" });
 const detailPosts = post("4900", { quote: quote("5000", "別の投稿がこの投稿を引用しているケース", 0) }) + main + post("5001", { quote: quote("9901", "返信の引用", 2) }) + post("5002", { images: 2 });
 const exploreTopics = '<div data-testid="trend"><span>日本のトレンド</span><span>#音楽の話題</span><span>12,345件のポスト</span></div><div data-testid="cellInnerDiv"><div role="link"><span>1日前・ニュース・31,943件のポスト</span><span>ADHDの日常の困りごとがXで話題に</span></div></div>';
@@ -43,6 +44,12 @@ const check = async (name, run) => { await run(); console.log(`PASS ${name}`); p
     assert.equal(await page.locator("html.xra-booting").count(), 0);
     assert.equal(await page.locator(".xra-handle").first().textContent(), "reader");
     assert.equal(await page.locator(".xra-card-bookmark").count(), 0);
+  });
+
+  await check("link cards include the source preview image", async () => {
+    assert.equal(await page.locator(".xra-link-card").count(), 1);
+    assert.equal(await page.locator(".xra-link-title").textContent(), "Yahoo!ニュースの見出し");
+    assert.match(await page.locator(".xra-link-image").getAttribute("src"), /fixture-link\.svg/);
   });
 
   await check("mode switch returns after X replaces it", async () => {
