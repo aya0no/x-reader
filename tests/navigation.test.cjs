@@ -3,7 +3,7 @@ const fs = require('node:fs');
 const vm = require('node:vm');
 const source = fs.readFileSync(require('node:path').join(__dirname, '../x-reader.user.js'), 'utf8');
 const extract = (name, end) => source.slice(source.indexOf(`  const ${name} =`), source.indexOf(`  const ${end} =`, source.indexOf(`  const ${name} =`)));
-let now = 1000, clicks = 0, assigns = 0, saved = 0, nativeScrolls = 0, transitions = 0;
+let now = 1000, clicks = 0, assigns = 0, saved = 0, nativeScrolls = 0;
 let nextTimer = 1;
 const timers = new Map();
 const setTimeoutFake = (callback, delay) => { const id = nextTimer++; timers.set(id, { callback, at: now + delay }); return id; };
@@ -17,7 +17,7 @@ root.xraRestoreTimer = setTimeoutFake(() => restoredOld++, 500);
 root.xraLoadTimers.push(setTimeoutFake(() => restoredOld++, 1000));
 const context = vm.createContext({ URL, Date: { now: () => now }, location, ROOT_ID: 'xra-root', DETAIL_ROOT_ID: 'xra-detail-root', CARD_ATTR: 'data-xra-card',
  document: { querySelectorAll: () => links, getElementById: id => id === root.id ? root : null },
- setTimeout: setTimeoutFake, clearTimeout: id => timers.delete(id), showReaderTransition: () => { transitions++; }, saveCurrentPosition: () => { saved++; }, currentPageKey: () => location.pathname,
+ setTimeout: setTimeoutFake, clearTimeout: id => timers.delete(id), saveCurrentPosition: () => { saved++; }, currentPageKey: () => location.pathname,
  readSetting: () => 'true', history: { length: 1 }, window: { scrollBy: () => nativeScrolls++ },
  detectInitialSection() {}, syncPageMode() {}, isDetailPage: () => false, renderCurrentFeed() {} });
 vm.runInContext('let readerGeneration = 0, renderTimer = null, preloadLocked = false, detailPreloadLocked = false, navigationPending = null; let lastUrl = location.href;\n' +
@@ -26,7 +26,7 @@ vm.runInContext('let readerGeneration = 0, renderTimer = null, preloadLocked = f
 const api = context.api;
 api.go('https://x.com/ngmkkrm'); api.go('https://x.com/ngmkkrm');
 assert.equal(clicks, 1, 'two taps produce one native navigation');
-assert.equal(assigns, 0); assert.equal(saved, 1); assert.equal(transitions, 1); assert.equal(root.xraRestore, null);
+assert.equal(assigns, 0); assert.equal(saved, 1); assert.equal(root.xraRestore, null);
 advance(1000); assert.equal(restoredOld, 0, 'old restore and startup timers were cancelled');
 location.href = 'https://x.com/ngmkkrm'; location.pathname = '/ngmkkrm'; api.sync();
 root.xraPath = location.pathname;
